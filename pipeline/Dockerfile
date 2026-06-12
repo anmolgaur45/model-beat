@@ -12,12 +12,14 @@ ENV HF_HOME=/app/.cache/huggingface
 
 # Install CPU-only torch first — separate layer, rarely invalidated
 COPY pyproject.toml .
+# Stub src/ so pip can read pyproject.toml metadata; real source overwrites it below
+RUN mkdir -p src/ainews && touch src/ainews/__init__.py
 RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
 
-# Install remaining deps — invalidated only when pyproject.toml changes
-RUN pip install --no-cache-dir .
+# Install remaining deps — editable so Python resolves from /app/src after COPY below
+RUN pip install --no-cache-dir -e .
 
-# Copy source after deps to maximize cache hits
+# Copy real source last to maximise dep-layer cache hits
 COPY src/ src/
 
 # Pre-bake sentence-transformer model so Cloud Run startup is instant

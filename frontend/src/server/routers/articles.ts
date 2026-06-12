@@ -270,4 +270,11 @@ export const articlesRouter = router({
         .map((c) => ({ ...c, articles: byCluster.get(c.id) ?? [] }))
         .filter((c) => c.articles.length > 0) as (Cluster & { articles: Article[] })[]
     }),
+
+  getLastIngested: publicProcedure.query(async () => {
+    const [row] = await sql<{ ran_at: string }[]>`
+      SELECT ran_at FROM pipeline_runs ORDER BY ran_at DESC LIMIT 1
+    `
+    return row?.ran_at ?? null
+  }),
 })

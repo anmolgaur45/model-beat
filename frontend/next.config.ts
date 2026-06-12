@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { withSentryConfig } from '@sentry/nextjs'
 
 const securityHeaders = [
   { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
@@ -20,7 +21,7 @@ const securityHeaders = [
       "font-src 'self' data:",
       // google.com for s2/favicons proxy used in StoryCard
       "img-src 'self' data: https://www.google.com",
-      "connect-src 'self'",
+      "connect-src 'self' https://*.sentry.io",
       "frame-ancestors 'none'",
     ].join('; '),
   },
@@ -38,4 +39,8 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+export default withSentryConfig(nextConfig, {
+  silent: true,
+  // only upload source maps when SENTRY_AUTH_TOKEN is present (CI/Vercel)
+  sourcemaps: { disable: !process.env.SENTRY_AUTH_TOKEN },
+})

@@ -13,8 +13,15 @@ import { Ticker } from '@/components/Ticker'
 import { useTheme } from '@/hooks/useTheme'
 import { CATEGORY_LABELS } from '@/components/categoryMeta'
 
+function localISO(date: Date = new Date()): string {
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+
 function todayISO(): string {
-  return new Date().toISOString().split('T')[0]
+  return localISO()
 }
 
 function getDateMeta(iso: string): { num: string; weekday: string } {
@@ -27,14 +34,16 @@ function getDateMeta(iso: string): { num: string; weekday: string } {
 
 function getMobileDates(count: number): Array<{ iso: string; num: string; weekday: string }> {
   return Array.from({ length: count }, (_, i) => {
-    const iso = new Date(Date.now() - i * 86_400_000).toISOString().split('T')[0]
+    const d = new Date()
+    d.setDate(d.getDate() - i)
+    const iso = localISO(d)
     return { iso, ...getDateMeta(iso) }
   })
 }
 
 function heroDateLabel(iso: string): { display: string; sub: string } {
-  const today = new Date().toISOString().split('T')[0]
-  const yesterday = new Date(Date.now() - 86_400_000).toISOString().split('T')[0]
+  const today = localISO()
+  const yesterday = (() => { const d = new Date(); d.setDate(d.getDate() - 1); return localISO(d) })()
   const d = new Date(iso + 'T12:00:00Z')
   const sub = d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', timeZone: 'UTC' })
   if (iso === today) return { display: 'Today', sub }
@@ -65,6 +74,15 @@ export default function HomePage() {
   }, [])
 
   // ── Queries ──────────────────────────────────────────────────────────────────
+
+  const { data: lastIngested } = trpc.articles.getLastIngested.useQuery(undefined, {
+    staleTime: 5 * 60_000,
+  })
+
+  const isStale = lastIngested === null || (
+    lastIngested != null &&
+    Date.now() - new Date(lastIngested).getTime() > 8 * 3_600_000
+  )
 
   const { data: topStories } = trpc.articles.getTopStories.useQuery(
     { days: 7, limit: 6 },
@@ -131,6 +149,13 @@ export default function HomePage() {
 
       {/* Glass nav */}
       <NavBar theme={theme} onToggleTheme={toggleTheme} query={search} onQuery={setSearch} />
+
+      {/* Stale data banner */}
+      {isStale && (
+        <div className="w-full px-4 py-2 text-center text-sm bg-amber-500/10 border-b border-amber-500/20 text-amber-400">
+          Pipeline hasn&apos;t run in over 8 hours — stories may be outdated
+        </div>
+      )}
 
       {/* Ticker */}
       {!isSearchMode && <Ticker stories={topStories ?? []} />}

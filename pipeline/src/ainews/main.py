@@ -83,6 +83,19 @@ def upsert_articles(conn: psycopg.Connection, articles: list[NormalizedArticle])
     conn.commit()
 
 
+def record_run(conn: psycopg.Connection, articles_ingested: int, clusters_updated: int) -> None:
+    with conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO pipeline_runs (articles_ingested, clusters_updated) VALUES (%s, %s)",
+            (articles_ingested, clusters_updated),
+        )
+        # trim to last 100 rows
+        cur.execute(
+            "DELETE FROM pipeline_runs WHERE id NOT IN (SELECT id FROM pipeline_runs ORDER BY ran_at DESC LIMIT 100)"
+        )
+    conn.commit()
+
+
 def notify_revalidate() -> None:
     if not settings.revalidate_url:
         return
@@ -138,6 +151,7 @@ def main() -> None:
         log.info("pipeline.clustered", count=clustered)
 
         log.info("pipeline.done", ingested=len(new_articles), embedded=embedded, scored=scored, clustered=clustered)
+        record_run(conn, articles_ingested=len(new_articles), clusters_updated=clustered)
         notify_revalidate()
     except Exception as exc:
         log.error("pipeline.failed", error=str(exc))

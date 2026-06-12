@@ -7,7 +7,7 @@
 #   2. Create Artifact Registry repo:
 #      gcloud artifacts repositories create ainews \
 #        --repository-format=docker \
-#        --location=REGION
+#        --location=asia-south1
 #
 #   3. Create secrets (after rotating credentials):
 #      printf "DB_PASSWORD"     | gcloud secrets create ainews-db-password    --data-file=-
@@ -17,26 +17,26 @@
 #   4. Create service account and grant roles:
 #      gcloud iam service-accounts create ainews-pipeline \
 #        --display-name="AI News Pipeline"
-#      gcloud projects add-iam-policy-binding PROJECT_ID \
-#        --member="serviceAccount:ainews-pipeline@PROJECT_ID.iam.gserviceaccount.com" \
+#      gcloud projects add-iam-policy-binding ai-news-calendar-493510 \
+#        --member="serviceAccount:ainews-pipeline@ai-news-calendar-493510.iam.gserviceaccount.com" \
 #        --role="roles/secretmanager.secretAccessor"
-#      gcloud projects add-iam-policy-binding PROJECT_ID \
-#        --member="serviceAccount:ainews-pipeline@PROJECT_ID.iam.gserviceaccount.com" \
+#      gcloud projects add-iam-policy-binding ai-news-calendar-493510 \
+#        --member="serviceAccount:ainews-pipeline@ai-news-calendar-493510.iam.gserviceaccount.com" \
 #        --role="roles/cloudsql.client"
 #
 #   5. Build and push image:
-#      gcloud builds submit --tag REGION-docker.pkg.dev/PROJECT_ID/ainews/pipeline:latest .
+#      gcloud builds submit --tag asia-south1-docker.pkg.dev/ai-news-calendar-493510/ainews/pipeline:latest .
 #
-#   6. Deploy job (fill in REGION and PROJECT_ID below, then run):
-#      gcloud run jobs replace pipeline/cloudrun-job.yaml --region REGION
+#   6. Deploy job (fill in asia-south1 and ai-news-calendar-493510 below, then run):
+#      gcloud run jobs replace pipeline/cloudrun-job.yaml --region asia-south1
 #
 # Cloud Scheduler (B3) — run once after job is deployed:
 #   gcloud scheduler jobs create http ainews-pipeline-trigger \
 #     --schedule="0 */6 * * *" \
-#     --uri="https://REGION-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/PROJECT_ID/jobs/ainews-pipeline:run" \
+#     --uri="https://asia-south1-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/ai-news-calendar-493510/jobs/ainews-pipeline:run" \
 #     --message-body="{}" \
-#     --oauth-service-account-email="ainews-pipeline@PROJECT_ID.iam.gserviceaccount.com" \
-#     --location=REGION
+#     --oauth-service-account-email="ainews-pipeline@ai-news-calendar-493510.iam.gserviceaccount.com" \
+#     --location=asia-south1
 #
 # Cloud Monitoring alert (B5) — alert on any failed execution:
 #   gcloud alpha monitoring policies create \
@@ -63,9 +63,9 @@ spec:
         spec:
           maxRetries: 0
           timeoutSeconds: 1800
-          serviceAccountName: ainews-pipeline@PROJECT_ID.iam.gserviceaccount.com
+          serviceAccountName: ainews-pipeline@ai-news-calendar-493510.iam.gserviceaccount.com
           containers:
-            - image: REGION-docker.pkg.dev/PROJECT_ID/ainews/pipeline:latest
+            - image: asia-south1-docker.pkg.dev/ai-news-calendar-493510/ainews/pipeline:latest
               resources:
                 limits:
                   cpu: "2000m"
@@ -87,10 +87,10 @@ spec:
                 - name: ANTHROPIC_API_KEY
                   valueFrom:
                     secretKeyRef:
-                      name: ainews-anthropic-key
+                      name: anthropic-api-key
                       key: "1"
                 - name: REVALIDATE_URL
-                  value: "https://YOUR_APP.vercel.app/api/revalidate"
+                  value: "https://ai-news-calendar.vercel.app/api/revalidate"
                 - name: CRON_SECRET
                   valueFrom:
                     secretKeyRef:

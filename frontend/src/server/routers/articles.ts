@@ -55,6 +55,24 @@ function expandForILIKE(query: string): string[] {
 }
 
 export const articlesRouter = router({
+  getTopStories: publicProcedure
+    .input(
+      z.object({
+        days: z.number().min(1).max(30).default(7),
+        limit: z.number().min(1).max(20).default(6),
+      }),
+    )
+    .query(async ({ input }) => {
+      const since = new Date(Date.now() - input.days * 86_400_000).toISOString()
+      return sql<{ headline: string; significance_score: number }[]>`
+        SELECT headline, significance_score FROM clusters
+        WHERE first_published_at >= ${since}
+        ORDER BY significance_score DESC
+        LIMIT ${input.limit}
+      `
+    }),
+
+
   getClusters: publicProcedure
     .input(
       z.object({

@@ -62,6 +62,10 @@ AGENTS.md
 AI_News_Calendar_Research.docx
 memory/
 
+# design handoff artifacts (not source code)
+handoff_extracted/
+*-handoff.zip
+
 # supabase local state
 frontend/supabase/.branches/
 frontend/supabase/.temp/

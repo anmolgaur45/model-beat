@@ -34,9 +34,10 @@ export function StoryCard({ cluster, showDate = false, scoreStyle = 'orb', highl
   const category = cluster.category as Category
   const label = CATEGORY_LABELS[category] ?? category
   const score = cluster.significance_score ?? 0
+  const tier = score >= 8.5 ? 'high' : score >= 7 ? 'notable' : 'standard'
 
   return (
-    <div className={`anc-card${isOpen ? ' open' : ''}`}>
+    <div className={`anc-card tier-${tier}${isOpen ? ' open' : ''}`}>
       <button className="anc-card-head" onClick={() => setIsOpen((o) => !o)}>
         <ScoreBadge score={score} style={scoreStyle} />
 

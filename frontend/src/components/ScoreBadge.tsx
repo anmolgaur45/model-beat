@@ -79,7 +79,7 @@ export function ScoreOrbLarge({ score }: { score: number }) {
           />
           <svg
             className="anc-orb-svg"
-            width={86} height={86}
+            width="100%" height="100%"
             viewBox="0 0 86 86"
           >
             <circle cx={43} cy={43} r={38.5} fill="none" stroke="var(--line2)" strokeWidth={5} />

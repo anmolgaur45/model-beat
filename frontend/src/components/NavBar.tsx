@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 interface Props {
   theme: 'dark' | 'light'
@@ -11,6 +11,24 @@ interface Props {
 
 export function NavBar({ theme, onToggleTheme, query, onQuery }: Props) {
   const inputRef = useRef<HTMLInputElement>(null)
+  const lastY = useRef(0)
+  const [navHidden, setNavHidden] = useState(false)
+  const [scrolled, setScrolled] = useState(false)
+
+  useEffect(() => {
+    const onScroll = () => {
+      const y = window.scrollY
+      setScrolled(y > 40)
+      if (y > lastY.current && y > 80) {
+        setNavHidden(true)
+      } else if (y < lastY.current) {
+        setNavHidden(false)
+      }
+      lastY.current = y
+    }
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [])
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -24,7 +42,7 @@ export function NavBar({ theme, onToggleTheme, query, onQuery }: Props) {
   }, [])
 
   return (
-    <div className="anc-navwrap">
+    <div className={`anc-navwrap${navHidden ? ' nav-hidden' : ''}${scrolled ? ' nav-scrolled' : ''}`}>
       <nav className="anc-nav">
         <a className="anc-brand" href="#">
           <span className="anc-mark">
@@ -44,12 +62,10 @@ export function NavBar({ theme, onToggleTheme, query, onQuery }: Props) {
             value={query}
             onChange={(e) => onQuery(e.target.value)}
           />
-          {query ? (
+          {query && (
             <button className="anc-search-clear" onClick={() => onQuery('')} title="Clear search">
               ✕
             </button>
-          ) : (
-            <span className="anc-search-kbd">⌘K</span>
           )}
         </div>
 

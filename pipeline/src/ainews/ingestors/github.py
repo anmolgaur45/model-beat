@@ -79,9 +79,12 @@ def _fetch_releases(client: httpx.Client, owner: str, repo: str) -> list[Normali
     return results
 
 
+_TRANSPORT = httpx.HTTPTransport(retries=3)
+
+
 def ingest_github() -> list[NormalizedArticle]:
     results: list[NormalizedArticle] = []
-    with httpx.Client() as client:
+    with httpx.Client(transport=_TRANSPORT) as client:
         for owner, repo in GITHUB_REPOS:
             results.extend(_fetch_releases(client, owner, repo))
     log.info("github.ingested", count=len(results))

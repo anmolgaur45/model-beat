@@ -15,5 +15,8 @@ class Settings(BaseSettings):
     cluster_distance_threshold: float = 0.38
     cluster_window_hours: int = 48
 
+    revalidate_url: str = ""
+    cron_secret: str = ""
+
 
 settings = Settings()

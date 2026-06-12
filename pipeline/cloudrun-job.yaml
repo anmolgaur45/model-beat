@@ -1,0 +1,98 @@
+# Cloud Run Job — ainews-pipeline
+#
+# Prerequisites (run once):
+#   1. Enable APIs:
+#      gcloud services enable run.googleapis.com artifactregistry.googleapis.com secretmanager.googleapis.com
+#
+#   2. Create Artifact Registry repo:
+#      gcloud artifacts repositories create ainews \
+#        --repository-format=docker \
+#        --location=REGION
+#
+#   3. Create secrets (after rotating credentials):
+#      printf "DB_PASSWORD"     | gcloud secrets create ainews-db-password    --data-file=-
+#      printf "ANTHROPIC_KEY"   | gcloud secrets create ainews-anthropic-key  --data-file=-
+#      printf "CRON_SECRET"     | gcloud secrets create ainews-cron-secret    --data-file=-
+#
+#   4. Create service account and grant roles:
+#      gcloud iam service-accounts create ainews-pipeline \
+#        --display-name="AI News Pipeline"
+#      gcloud projects add-iam-policy-binding PROJECT_ID \
+#        --member="serviceAccount:ainews-pipeline@PROJECT_ID.iam.gserviceaccount.com" \
+#        --role="roles/secretmanager.secretAccessor"
+#      gcloud projects add-iam-policy-binding PROJECT_ID \
+#        --member="serviceAccount:ainews-pipeline@PROJECT_ID.iam.gserviceaccount.com" \
+#        --role="roles/cloudsql.client"
+#
+#   5. Build and push image:
+#      gcloud builds submit --tag REGION-docker.pkg.dev/PROJECT_ID/ainews/pipeline:latest .
+#
+#   6. Deploy job (fill in REGION and PROJECT_ID below, then run):
+#      gcloud run jobs replace pipeline/cloudrun-job.yaml --region REGION
+#
+# Cloud Scheduler (B3) — run once after job is deployed:
+#   gcloud scheduler jobs create http ainews-pipeline-trigger \
+#     --schedule="0 */6 * * *" \
+#     --uri="https://REGION-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/PROJECT_ID/jobs/ainews-pipeline:run" \
+#     --message-body="{}" \
+#     --oauth-service-account-email="ainews-pipeline@PROJECT_ID.iam.gserviceaccount.com" \
+#     --location=REGION
+#
+# Cloud Monitoring alert (B5) — alert on any failed execution:
+#   gcloud alpha monitoring policies create \
+#     --display-name="ainews-pipeline-failure" \
+#     --condition-display-name="Job execution failed" \
+#     --condition-filter='resource.type="cloud_run_job" AND metric.type="run.googleapis.com/job/completed_task_count" AND metric.labels.result="failed"' \
+#     --condition-threshold-value=1 \
+#     --condition-threshold-comparison=COMPARISON_GT \
+#     --notification-channels=CHANNEL_ID
+#   # Create email notification channel first:
+#   # gcloud alpha monitoring channels create --display-name="anmol-email" \
+#   #   --type=email --channel-labels=email_address=anmolgaur45@yahoo.co.in
+
+apiVersion: run.googleapis.com/v1
+kind: Job
+metadata:
+  name: ainews-pipeline
+spec:
+  template:
+    spec:
+      taskCount: 1
+      parallelism: 1
+      template:
+        spec:
+          maxRetries: 0
+          timeoutSeconds: 1800
+          serviceAccountName: ainews-pipeline@PROJECT_ID.iam.gserviceaccount.com
+          containers:
+            - image: REGION-docker.pkg.dev/PROJECT_ID/ainews/pipeline:latest
+              resources:
+                limits:
+                  cpu: "2000m"
+                  memory: "2048Mi"
+              env:
+                - name: DATABASE_HOST
+                  value: "136.112.67.210"
+                - name: DATABASE_PORT
+                  value: "5432"
+                - name: DATABASE_NAME
+                  value: "ainews"
+                - name: DATABASE_USER
+                  value: "ainews_app"
+                - name: DATABASE_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: ainews-db-password
+                      key: "1"
+                - name: ANTHROPIC_API_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: ainews-anthropic-key
+                      key: "1"
+                - name: REVALIDATE_URL
+                  value: "https://YOUR_APP.vercel.app/api/revalidate"
+                - name: CRON_SECRET
+                  valueFrom:
+                    secretKeyRef:
+                      name: ainews-cron-secret
+                      key: "1"

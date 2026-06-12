@@ -24,6 +24,9 @@ def _is_ai_related(title: str) -> bool:
     return any(kw in lower for kw in AI_KEYWORDS)
 
 
+_TRANSPORT = httpx.HTTPTransport(retries=3)
+
+
 def _fetch_item(client: httpx.Client, item_id: int) -> dict | None:
     try:
         resp = client.get(f"{HN_BASE}/item/{item_id}.json", timeout=5.0)
@@ -35,7 +38,7 @@ def _fetch_item(client: httpx.Client, item_id: int) -> dict | None:
 
 def ingest_hn() -> list[NormalizedArticle]:
     try:
-        with httpx.Client(timeout=10.0) as client:
+        with httpx.Client(timeout=10.0, transport=_TRANSPORT) as client:
             resp = client.get(f"{HN_BASE}/topstories.json")
             resp.raise_for_status()
             top_ids: list[int] = resp.json()
@@ -46,7 +49,7 @@ def ingest_hn() -> list[NormalizedArticle]:
     ids_to_fetch = top_ids[:FETCH_LIMIT]
     results: list[NormalizedArticle] = []
 
-    with httpx.Client(timeout=5.0) as client:
+    with httpx.Client(timeout=5.0, transport=_TRANSPORT) as client:
         with ThreadPoolExecutor(max_workers=BATCH_SIZE) as executor:
             futures = {executor.submit(_fetch_item, client, id_): id_ for id_ in ids_to_fetch}
             for future in as_completed(futures):

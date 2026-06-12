@@ -1,3 +1,4 @@
+import httpx
 import structlog
 import psycopg
 
@@ -19,10 +20,16 @@ def ingest_all() -> list[NormalizedArticle]:
     all_articles: list[NormalizedArticle] = []
 
     for source in RSS_SOURCES:
-        all_articles.extend(ingest_rss(source))
+        try:
+            all_articles.extend(ingest_rss(source))
+        except Exception as exc:
+            log.warning("ingest.source_failed", source=source.name, error=str(exc))
 
-    all_articles.extend(ingest_hn())
-    all_articles.extend(ingest_github())
+    for fn, label in [(ingest_hn, "hackernews"), (ingest_github, "github")]:
+        try:
+            all_articles.extend(fn())
+        except Exception as exc:
+            log.warning("ingest.source_failed", source=label, error=str(exc))
 
     return all_articles
 
@@ -76,6 +83,21 @@ def upsert_articles(conn: psycopg.Connection, articles: list[NormalizedArticle])
     conn.commit()
 
 
+def notify_revalidate() -> None:
+    if not settings.revalidate_url:
+        return
+    try:
+        with httpx.Client(timeout=10.0) as client:
+            resp = client.post(
+                settings.revalidate_url,
+                headers={"Authorization": f"Bearer {settings.cron_secret}"},
+            )
+            resp.raise_for_status()
+        log.info("pipeline.revalidated")
+    except Exception as exc:
+        log.warning("pipeline.revalidate_failed", error=str(exc))
+
+
 def main() -> None:
     structlog.configure(
         processors=[
@@ -116,6 +138,7 @@ def main() -> None:
         log.info("pipeline.clustered", count=clustered)
 
         log.info("pipeline.done", ingested=len(new_articles), embedded=embedded, scored=scored, clustered=clustered)
+        notify_revalidate()
     except Exception as exc:
         log.error("pipeline.failed", error=str(exc))
         raise

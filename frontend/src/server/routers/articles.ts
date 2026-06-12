@@ -3,6 +3,17 @@ import { router, publicProcedure } from '../trpc'
 import sql from '@/lib/db'
 import type { Article, Cluster } from '@/types/article'
 
+const CATEGORY_VALUES = [
+  'model-releases', 'research-papers', 'company-news', 'product-launches',
+  'regulation-policy', 'hardware-infrastructure', 'open-source', 'opinion-analysis', 'uncategorized',
+] as const
+
+const zCategory = z.enum(CATEGORY_VALUES).optional()
+const zDateStr = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional()
+
+// Article columns to fetch — excludes the large embedding vector
+const ARTICLE_COLS = sql`id, title, body_excerpt, source_name, source_url, author, published_at, raw_category, cluster_id, impact_score, created_at`
+
 // ── Search synonym expansion ────────────────────────────────────────────────
 const SEARCH_SYNONYMS: Record<string, string[]> = {
   chatgpt:   ['openai', 'gpt'],
@@ -76,8 +87,8 @@ export const articlesRouter = router({
   getClusters: publicProcedure
     .input(
       z.object({
-        date: z.string().optional(),
-        category: z.string().optional(),
+        date: zDateStr,
+        category: zCategory,
         limit: z.number().min(1).max(100).default(50),
       }),
     )
@@ -108,7 +119,7 @@ export const articlesRouter = router({
 
       const clusterIds = clusters.map((c) => c.id)
       const articles = await sql<Article[]>`
-        SELECT * FROM articles
+        SELECT ${ARTICLE_COLS} FROM articles
         WHERE cluster_id = ANY(${clusterIds})
         ORDER BY significance_base DESC
       `
@@ -136,7 +147,7 @@ export const articlesRouter = router({
       if (!cluster) {
         // Fallback: treat id as article id (pre-clustering)
         const [article] = await sql<Article[]>`
-          SELECT * FROM articles WHERE id = ${input.id}
+          SELECT ${ARTICLE_COLS} FROM articles WHERE id = ${input.id}
         `
         if (!article) throw new Error('Not found')
         return {
@@ -152,7 +163,7 @@ export const articlesRouter = router({
       }
 
       const articles = await sql<Article[]>`
-        SELECT * FROM articles
+        SELECT ${ARTICLE_COLS} FROM articles
         WHERE cluster_id = ${input.id}
         ORDER BY significance_base DESC
       `
@@ -163,10 +174,13 @@ export const articlesRouter = router({
   search: publicProcedure
     .input(
       z.object({
-        query: z.string().min(1).max(200),
-        category: z.string().optional(),
-        dateFrom: z.string().optional(),
-        dateTo: z.string().optional(),
+        query: z.string().min(1).max(200).refine(
+          (q) => !/[%_]/.test(q),
+          'Search query may not contain wildcard characters',
+        ),
+        category: zCategory,
+        dateFrom: zDateStr,
+        dateTo: zDateStr,
         limit: z.number().min(1).max(50).default(20),
         offset: z.number().min(0).default(0),
       }),
@@ -205,6 +219,7 @@ export const articlesRouter = router({
 
       // Query 2: source_name ILIKE match on articles
       const ilikeTerms = expandForILIKE(input.query)
+      // No % or _ in terms needed since the user query was already validated above
       const patterns = ilikeTerms.map((t) => `%${t}%`)
       const sourceArticles = await sql<{ cluster_id: string }[]>`
         SELECT DISTINCT cluster_id FROM articles
@@ -253,7 +268,7 @@ export const articlesRouter = router({
 
       const clusterIds = page.map((c) => c.id)
       const articles = await sql<Article[]>`
-        SELECT * FROM articles
+        SELECT ${ARTICLE_COLS} FROM articles
         WHERE cluster_id = ANY(${clusterIds})
         ORDER BY significance_base DESC
       `

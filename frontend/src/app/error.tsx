@@ -17,7 +17,7 @@ export default function Error({
           </svg>
         </div>
         <h3>Signal lost</h3>
-        <p>{error.message || "We couldn't load the feed. The connection dropped or the server is having a moment."}</p>
+        <p>{"We couldn't load the feed. The connection dropped or the server is having a moment."}</p>
         <button className="anc-statebox-act" onClick={reset}>Retry</button>
       </div>
     </div>

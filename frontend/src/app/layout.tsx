@@ -24,23 +24,23 @@ const bricolage = Bricolage_Grotesque({
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_URL ?? 'http://localhost:3000'),
   title: {
-    default: 'AI News Calendar',
+    default: 'AI News Calendar — the AI news that actually mattered',
     template: '%s | AI News Calendar',
   },
   description:
-    "Daily AI news organized by date, deduplicated and ranked by significance. Track model releases, research papers, and company news from the world's top AI sources.",
+    'The AI news that actually mattered, organized by day — deduplicated across sources, ranked by significance, every story cited. Track model releases, research, and company news from the top AI labs.',
   keywords: ['AI news', 'artificial intelligence', 'machine learning', 'GPT', 'Claude', 'Gemini', 'LLM'],
   openGraph: {
     type: 'website',
     siteName: 'AI News Calendar',
-    title: 'AI News Calendar',
-    description: 'Daily AI news organized by date, deduplicated and ranked by significance.',
+    title: 'AI News Calendar — the AI news that actually mattered',
+    description: 'The AI news that actually mattered, organized by day — deduplicated, ranked by significance, every source cited.',
     images: [{ url: '/api/og', width: 1200, height: 630, alt: 'AI News Calendar' }],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'AI News Calendar',
-    description: 'Daily AI news organized by date, deduplicated and ranked by significance.',
+    title: 'AI News Calendar — the AI news that actually mattered',
+    description: 'The AI news that actually mattered, organized by day — deduplicated, ranked by significance, every source cited.',
     images: ['/api/og'],
   },
   robots: { index: true, follow: true },

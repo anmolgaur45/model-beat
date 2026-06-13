@@ -5,11 +5,12 @@ import { useEffect, useRef, useState } from 'react'
 interface Props {
   theme: 'dark' | 'light'
   onToggleTheme: () => void
-  query: string
-  onQuery: (v: string) => void
+  query?: string
+  onQuery?: (v: string) => void
+  showSearch?: boolean
 }
 
-export function NavBar({ theme, onToggleTheme, query, onQuery }: Props) {
+export function NavBar({ theme, onToggleTheme, query = '', onQuery, showSearch = true }: Props) {
   const inputRef = useRef<HTMLInputElement>(null)
   const lastY = useRef(0)
   const [navHidden, setNavHidden] = useState(false)
@@ -31,6 +32,7 @@ export function NavBar({ theme, onToggleTheme, query, onQuery }: Props) {
   }, [])
 
   useEffect(() => {
+    if (!showSearch) return
     const handler = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault()
@@ -39,35 +41,41 @@ export function NavBar({ theme, onToggleTheme, query, onQuery }: Props) {
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [])
+  }, [showSearch])
 
   return (
     <div className={`anc-navwrap${navHidden ? ' nav-hidden' : ''}${scrolled ? ' nav-scrolled' : ''}`}>
       <nav className="anc-nav">
-        <a className="anc-brand" href="#">
+        <a className="anc-brand" href="/">
           <span className="anc-mark">
             <span className="anc-mark-dot" />
           </span>
           <span className="anc-brand-name">AI News Calendar</span>
         </a>
 
-        <div className="anc-search">
-          <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
-            <circle cx="6" cy="6" r="4.5" stroke="currentColor" strokeWidth="1.4" />
-            <path d="M9.5 9.5L13 13" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-          </svg>
-          <input
-            ref={inputRef}
-            placeholder="Search the archive…"
-            value={query}
-            onChange={(e) => onQuery(e.target.value)}
-          />
-          {query && (
-            <button className="anc-search-clear" onClick={() => onQuery('')} title="Clear search">
-              ✕
-            </button>
-          )}
-        </div>
+        {showSearch && onQuery ? (
+          <div className="anc-search">
+            <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
+              <circle cx="6" cy="6" r="4.5" stroke="currentColor" strokeWidth="1.4" />
+              <path d="M9.5 9.5L13 13" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+            </svg>
+            <input
+              ref={inputRef}
+              placeholder="Search the archive…"
+              value={query}
+              onChange={(e) => onQuery(e.target.value)}
+            />
+            {query && (
+              <button className="anc-search-clear" onClick={() => onQuery('')} title="Clear search">
+                ✕
+              </button>
+            )}
+          </div>
+        ) : (
+          <span style={{ flex: 1 }} />
+        )}
+
+        <a className="anc-navlink" href="/models">Models</a>
 
         <button className="anc-theme-btn" onClick={onToggleTheme} title={theme === 'dark' ? 'Switch to light' : 'Switch to dark'}>
           {theme === 'dark' ? (

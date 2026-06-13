@@ -35,6 +35,7 @@ export function StoryCard({ cluster, showDate = false, scoreStyle = 'orb', highl
   const label = CATEGORY_LABELS[category] ?? category
   const score = cluster.significance_score ?? 0
   const tier = score >= 8.5 ? 'high' : score >= 7 ? 'notable' : 'standard'
+  const hnArticle = cluster.articles.find((a) => a.source_name === 'Hacker News')
 
   return (
     <div className={`anc-card tier-${tier}${isOpen ? ' open' : ''}`}>
@@ -99,18 +100,30 @@ export function StoryCard({ cluster, showDate = false, scoreStyle = 'orb', highl
                       <span className="anc-srctime">{timeAgo(a.published_at)}</span>
                     </div>
                   ))}
-                  {primary && (
-                    <a
-                      className="anc-read"
-                      style={{ marginTop: 8 }}
-                      href={primary.source_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      Read original ↗
-                    </a>
-                  )}
+                  <div className="anc-card-actions" style={{ marginTop: 8 }}>
+                    {primary && (
+                      <a
+                        className="anc-read"
+                        href={primary.source_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        Read original ↗
+                      </a>
+                    )}
+                    {hnArticle && (
+                      <a
+                        className="anc-read anc-discuss"
+                        href={hnArticle.source_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        💬 Discussion on Hacker News ↗
+                      </a>
+                    )}
+                  </div>
                 </div>
               )}
             </div>

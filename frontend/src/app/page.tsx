@@ -8,6 +8,7 @@ import { CategoryFilter } from '@/components/CategoryFilter'
 import { DateSection, SkeletonSection } from '@/components/DateSection'
 import { DateNav } from '@/components/DateNav'
 import { StoryCard } from '@/components/StoryCard'
+import { Recap } from '@/components/Recap'
 import { NavBar } from '@/components/NavBar'
 import { Ticker } from '@/components/Ticker'
 import { useTheme } from '@/hooks/useTheme'
@@ -59,19 +60,28 @@ export default function HomePage() {
   const [selectedDate, setSelectedDate] = useState(todayISO)
   const [selectedCategory, setSelectedCategory] = useState<CategoryOption>('all')
   const [search, setSearch] = useState('')
+  const [recapMode, setRecapMode] = useState(false)
   const [mobileDaysShown, setMobileDaysShown] = useState(7)
+  const RECAP_DAYS = 7
 
   // Search pagination
   const [searchOffset, setSearchOffset] = useState(0)
   const [searchAccumulated, setSearchAccumulated] = useState<(Cluster & { articles: Article[] })[]>([])
 
   const isSearchMode = search.trim().length > 0
+  const timelineMode = !isSearchMode && !recapMode
   const categoryParam = selectedCategory === 'all' ? undefined : (selectedCategory as Category)
 
   const handleDateSelect = useCallback((date: string) => {
     setSearch('')
+    setRecapMode(false)
     setSelectedDate(date)
   }, [])
+
+  // Searching always exits recap so the two modes never overlap
+  useEffect(() => {
+    if (search.trim().length > 0) setRecapMode(false)
+  }, [search])
 
   // ── Queries ──────────────────────────────────────────────────────────────────
 
@@ -99,6 +109,11 @@ export default function HomePage() {
       { query: search.trim(), category: categoryParam, limit: 20, offset: searchOffset },
       { enabled: isSearchMode },
     )
+
+  const { data: recapData, isLoading: recapLoading } = trpc.articles.getRecap.useQuery(
+    { days: RECAP_DAYS, limit: 40 },
+    { enabled: recapMode, staleTime: 5 * 60_000 },
+  )
 
   // Reset accumulated search results when query or category changes
   useEffect(() => {
@@ -143,7 +158,7 @@ export default function HomePage() {
       </div>
 
       {/* Ghost date number (decorative, desktop only) */}
-      {!isSearchMode && (
+      {timelineMode && (
         <div className="ghost-number" suppressHydrationWarning>{ghostNum}</div>
       )}
 
@@ -158,12 +173,12 @@ export default function HomePage() {
       )}
 
       {/* Ticker */}
-      {!isSearchMode && <Ticker stories={topStories ?? []} />}
+      {timelineMode && <Ticker stories={topStories ?? []} />}
 
       {/* Hero — date heading + category pills */}
-      {!isSearchMode && (
+      {timelineMode && (
         <header className="anc-hero" suppressHydrationWarning>
-          <div className="anc-kicker">Your one stop AI news solution</div>
+          <div className="anc-kicker">The AI news that actually mattered</div>
           <div className="anc-date-heading">
             {heroDisplay} <span className="dim">— {heroSub}</span>
           </div>
@@ -172,12 +187,17 @@ export default function HomePage() {
             {selectedCategory !== 'all' ? ` in ${CATEGORY_LABELS[selectedCategory]}` : ' today'},
             {' '}ranked by significance · highest signal first
           </div>
+          <div className="anc-hero-actions">
+            <button className="anc-catchup" onClick={() => { setSearch(''); setRecapMode(true) }}>
+              ⚡ Catch me up on the last {RECAP_DAYS} days
+            </button>
+          </div>
           <CategoryFilter selected={selectedCategory} onChange={(c) => { setSelectedCategory(c) }} />
         </header>
       )}
 
       {/* Mobile date strip */}
-      {!isSearchMode && (
+      {timelineMode && (
         <div className="anc-datestrip" suppressHydrationWarning>
           {mobileDates.map(({ iso, num, weekday }) => (
             <button
@@ -202,7 +222,7 @@ export default function HomePage() {
       {/* Main content */}
       <div className="anc-body">
         {/* Desktop date rail */}
-        {!isSearchMode && (
+        {timelineMode && (
           <DateNav
             selectedDate={selectedDate}
             onSelect={handleDateSelect}
@@ -212,7 +232,18 @@ export default function HomePage() {
 
         {/* Feed */}
         <main className="anc-feed">
-          {isSearchMode ? (
+          {recapMode ? (
+            // ── Catch me up ───────────────────────────────────────────────────
+            recapLoading ? (
+              <SkeletonSection />
+            ) : (
+              <Recap
+                clusters={recapData ?? []}
+                days={RECAP_DAYS}
+                onClose={() => setRecapMode(false)}
+              />
+            )
+          ) : isSearchMode ? (
             // ── Search results ────────────────────────────────────────────────
             <>
               <div className="anc-results-head">

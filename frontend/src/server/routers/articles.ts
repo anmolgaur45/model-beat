@@ -84,6 +84,91 @@ export const articlesRouter = router({
     }),
 
 
+  // "Catch me up" — the most significant stories across the last N days.
+  // Floor + cap: only clusters scoring >= minScore, at most `limit` of them.
+  getRecap: publicProcedure
+    .input(
+      z.object({
+        days: z.number().min(1).max(30).default(7),
+        limit: z.number().min(1).max(60).default(40),
+        minScore: z.number().min(1).max(10).default(6),
+      }),
+    )
+    .query(async ({ input }) => {
+      const since = new Date(Date.now() - input.days * 86_400_000).toISOString()
+
+      const clusters = await sql<Cluster[]>`
+        SELECT * FROM clusters
+        WHERE first_published_at >= ${since}
+          AND significance_score >= ${input.minScore}
+        ORDER BY significance_score DESC, first_published_at DESC
+        LIMIT ${input.limit}
+      `
+
+      if (clusters.length === 0) return []
+
+      const clusterIds = clusters.map((c) => c.id)
+      const articles = await sql<Article[]>`
+        SELECT ${ARTICLE_COLS} FROM articles
+        WHERE cluster_id = ANY(${clusterIds})
+        ORDER BY significance_base DESC
+      `
+
+      const articlesByCluster = new Map<string, Article[]>()
+      for (const article of articles) {
+        if (!article.cluster_id) continue
+        const arr = articlesByCluster.get(article.cluster_id) ?? []
+        if (arr.length < 3) arr.push(article)
+        articlesByCluster.set(article.cluster_id, arr)
+      }
+
+      return clusters
+        .map((c) => ({ ...c, articles: articlesByCluster.get(c.id) ?? [] }))
+        .filter((c) => c.articles.length > 0) as (Cluster & { articles: Article[] })[]
+    }),
+
+  // Model-release tracker: model-releases clusters in reverse-chronological order
+  getModelReleases: publicProcedure
+    .input(
+      z.object({
+        days: z.number().min(1).max(365).default(60),
+        limit: z.number().min(1).max(100).default(50),
+      }),
+    )
+    .query(async ({ input }) => {
+      const since = new Date(Date.now() - input.days * 86_400_000).toISOString()
+
+      const clusters = await sql<Cluster[]>`
+        SELECT * FROM clusters
+        WHERE category = 'model-releases'
+          AND first_published_at >= ${since}
+          AND significance_score > 0
+        ORDER BY first_published_at DESC
+        LIMIT ${input.limit}
+      `
+
+      if (clusters.length === 0) return []
+
+      const clusterIds = clusters.map((c) => c.id)
+      const articles = await sql<Article[]>`
+        SELECT ${ARTICLE_COLS} FROM articles
+        WHERE cluster_id = ANY(${clusterIds})
+        ORDER BY significance_base DESC
+      `
+
+      const articlesByCluster = new Map<string, Article[]>()
+      for (const article of articles) {
+        if (!article.cluster_id) continue
+        const arr = articlesByCluster.get(article.cluster_id) ?? []
+        if (arr.length < 3) arr.push(article)
+        articlesByCluster.set(article.cluster_id, arr)
+      }
+
+      return clusters
+        .map((c) => ({ ...c, articles: articlesByCluster.get(c.id) ?? [] }))
+        .filter((c) => c.articles.length > 0) as (Cluster & { articles: Article[] })[]
+    }),
+
   getClusters: publicProcedure
     .input(
       z.object({

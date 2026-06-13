@@ -174,6 +174,137 @@ _BACKFILL_MIN = 300
 _BACKFILL_DAYS = 4
 
 
+def compute_merge_groups(
+    centroids: list[np.ndarray],
+    times: list[float],
+    arxiv: list[bool],
+    news_threshold: float,
+    window_s: float,
+) -> list[list[int]]:
+    """Union-find over cluster centroids — groups clusters that are the same story.
+
+    Two clusters merge when their centroid cosine distance is below threshold and
+    they fall within the time window. Pairs where BOTH clusters are arXiv-dominant
+    use the tight arXiv threshold, so distinct same-subfield papers are not
+    re-blobbed; a paper + its news coverage still merge at the news threshold.
+    Returns index groups of size >= 2 only.
+    """
+    k = len(centroids)
+    if k < 2:
+        return []
+    mat = np.stack([c / max(float(np.linalg.norm(c)), 1e-9) for c in centroids])
+    dist = 1.0 - mat @ mat.T
+
+    parent = list(range(k))
+
+    def find(x: int) -> int:
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    for i in range(k):
+        for j in range(i + 1, k):
+            if abs(times[i] - times[j]) > window_s:
+                continue
+            thr = settings.cluster_arxiv_threshold if (arxiv[i] and arxiv[j]) else news_threshold
+            if dist[i, j] < thr:
+                ri, rj = find(i), find(j)
+                if ri != rj:
+                    parent[ri] = rj
+
+    groups: dict[int, list[int]] = {}
+    for i in range(k):
+        groups.setdefault(find(i), []).append(i)
+    return [g for g in groups.values() if len(g) >= 2]
+
+
+def merge_close_clusters(
+    conn: psycopg.Connection,
+    news_threshold: float,
+    window_hours: int,
+) -> set[str]:
+    """Reconcile same-story clusters that fragmented during assignment.
+
+    The greedy article-by-article join can split one story into several clusters
+    when its coverage is internally spread (see tasks/f1-findings.md). This pass
+    merges clusters whose centroids are within threshold. Bounded to the backfill
+    window. Returns the surviving cluster ids that absorbed others.
+    """
+    cutoff = datetime.now(timezone.utc) - timedelta(days=_BACKFILL_DAYS)
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT id, first_published_at FROM clusters WHERE first_published_at >= %s",
+            (cutoff,),
+        )
+        meta = {str(r[0]): r[1] for r in cur.fetchall()}
+    if len(meta) < 2:
+        return set()
+
+    ids = list(meta.keys())
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT cluster_id, embedding, source_name FROM articles
+            WHERE cluster_id = ANY(%s::uuid[]) AND embedding IS NOT NULL
+            """,
+            (ids,),
+        )
+        rows = cur.fetchall()
+
+    agg: dict[str, dict] = {}
+    for cid, emb, src in rows:
+        d = agg.setdefault(str(cid), {"embs": [], "arxiv": 0, "n": 0})
+        d["embs"].append(np.asarray(emb, dtype=np.float32))
+        d["n"] += 1
+        if (src or "").startswith("arXiv"):
+            d["arxiv"] += 1
+
+    order = [cid for cid in ids if cid in agg and agg[cid]["embs"]]
+    if len(order) < 2:
+        return set()
+
+    centroids = [np.stack(agg[cid]["embs"]).mean(axis=0) for cid in order]
+    times = [meta[cid].timestamp() for cid in order]
+    arxiv_dom = [agg[cid]["arxiv"] * 2 > agg[cid]["n"] for cid in order]
+    sizes = {cid: agg[cid]["n"] for cid in order}
+
+    groups = compute_merge_groups(
+        centroids, times, arxiv_dom, news_threshold, window_hours * 3600
+    )
+    if not groups:
+        return set()
+
+    survivors: set[str] = set()
+    for grp in groups:
+        members = [order[i] for i in grp]
+        # canonical = largest cluster (earliest on tie) absorbs the rest
+        canonical = max(members, key=lambda c: (sizes[c], -meta[c].timestamp()))
+        others = [c for c in members if c != canonical]
+        with conn.cursor() as cur:
+            for o in others:
+                cur.execute(
+                    "UPDATE articles SET cluster_id = %s WHERE cluster_id = %s", (canonical, o)
+                )
+                cur.execute("DELETE FROM clusters WHERE id = %s", (o,))
+            cur.execute(
+                """
+                UPDATE clusters c SET
+                    article_count      = (SELECT COUNT(*) FROM articles a WHERE a.cluster_id = c.id),
+                    first_published_at = (SELECT MIN(published_at) FROM articles a WHERE a.cluster_id = c.id)
+                WHERE c.id = %s
+                """,
+                (canonical,),
+            )
+        survivors.add(canonical)
+        log.info("clustering.merged", canonical=canonical[:8], absorbed=len(others))
+
+    conn.commit()
+    for cid in survivors:
+        refresh_cluster_meta(conn, cid)
+    return survivors
+
+
 def cluster_pending(
     conn: psycopg.Connection,
     distance_threshold: float,
@@ -269,7 +400,12 @@ def cluster_pending(
         conn.commit()
         total += 1
 
-    # Recompute significance scores for every touched cluster
+    # Reconcile same-story clusters that fragmented during the greedy join
+    merged = merge_close_clusters(conn, distance_threshold, window_hours)
+    affected_clusters |= merged
+
+    # Recompute significance scores for every surviving touched cluster
+    # (merges may have deleted some — skip those)
     log.info("clustering.rescoring", clusters=len(affected_clusters))
     for cluster_id in affected_clusters:
         score = compute_cluster_score(conn, cluster_id)

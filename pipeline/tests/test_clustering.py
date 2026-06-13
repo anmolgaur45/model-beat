@@ -1,11 +1,22 @@
 from datetime import datetime, timezone
 
+import numpy as np
+
 from ainews.processing.clustering import (
+    compute_merge_groups,
     effective_threshold,
     normalize_score,
     pick_category,
     pick_headline,
 )
+
+WINDOW_S = 48 * 3600
+# unit vectors at increasing angles from A: dist(A,B)=0.2, dist(B,C)=0.2, dist(A,C)=0.72
+VA = np.array([1.0, 0.0], dtype=np.float32)
+VB = np.array([0.8, 0.6], dtype=np.float32)        # 0.20 from A
+VC = np.array([0.2806, 0.9598], dtype=np.float32)  # 0.20 from B, 0.72 from A
+VFAR = np.array([0.6, 0.8], dtype=np.float32)       # 0.40 from A
+VNEAR = np.array([0.95, 0.312], dtype=np.float32)   # ~0.05 from A
 
 
 def _dt(day: int) -> datetime:
@@ -81,3 +92,47 @@ def test_pick_category_ignores_uncategorized():
 
 def test_pick_category_falls_back_to_current():
     assert pick_category(["uncategorized", None], "model-releases") == "model-releases"
+
+
+# ── compute_merge_groups ────────────────────────────────────────────────────
+
+def test_merge_close_news_clusters():
+    groups = compute_merge_groups([VA, VB], [0, 0], [False, False], 0.30, WINDOW_S)
+    assert groups == [[0, 1]]
+
+
+def test_no_merge_far_clusters():
+    groups = compute_merge_groups([VA, VFAR], [0, 0], [False, False], 0.30, WINDOW_S)
+    assert groups == []
+
+
+def test_no_merge_two_arxiv_clusters_above_tight_threshold():
+    # both arXiv-dominant, distance 0.20 > arxiv threshold (0.10) -> stay split
+    groups = compute_merge_groups([VA, VB], [0, 0], [True, True], 0.30, WINDOW_S)
+    assert groups == []
+
+
+def test_merge_arxiv_paper_with_news_coverage():
+    # one arXiv, one news -> news threshold applies, so they merge
+    groups = compute_merge_groups([VA, VB], [0, 0], [True, False], 0.30, WINDOW_S)
+    assert groups == [[0, 1]]
+
+
+def test_no_merge_outside_time_window():
+    groups = compute_merge_groups([VA, VB], [0, 100 * 3600], [False, False], 0.30, WINDOW_S)
+    assert groups == []
+
+
+def test_merge_transitive_chain():
+    # A-B and B-C are each 0.20; A-C is 0.72. Transitivity still groups all three.
+    groups = compute_merge_groups([VA, VB, VC], [0, 0, 0], [False] * 3, 0.30, WINDOW_S)
+    assert len(groups) == 1
+    assert sorted(groups[0]) == [0, 1, 2]
+
+
+def test_no_groups_when_all_distinct():
+    # three mutually orthogonal/opposite unit vectors — all pairwise distances >= 1.0
+    v_orth = np.array([0.0, 1.0], dtype=np.float32)
+    v_opp = np.array([-1.0, 0.0], dtype=np.float32)
+    groups = compute_merge_groups([VA, v_orth, v_opp], [0, 0, 0], [False] * 3, 0.30, WINDOW_S)
+    assert groups == []

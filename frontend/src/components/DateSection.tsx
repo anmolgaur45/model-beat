@@ -71,11 +71,16 @@ export function DateSection({ date, clusters, scoreStyle = 'orb' }: Props) {
   const visible = rest.slice(0, visibleCount)
   const hasMore = visibleCount < rest.length
 
+  // Honest signalling: stories ran, but nothing reached the "notable" tier (>= 7).
+  // Better to say so than to dress up a slow news day.
+  const isQuietDay = sorted.length > 0 && (sorted[0].significance_score ?? 0) < 7
+
   return (
     <section>
       <div className="anc-dhead">
         <h2 className="anc-dhead-label">{label}</h2>
         <span className="anc-dhead-count">{sorted.length} {sorted.length === 1 ? 'story' : 'stories'}</span>
+        {isQuietDay && <span className="anc-dhead-quiet">quiet day · nothing major broke</span>}
         <span className="anc-dhead-rule" />
       </div>
 

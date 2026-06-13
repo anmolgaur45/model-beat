@@ -60,7 +60,10 @@ def ingest_hn() -> list[NormalizedArticle]:
                 if not title or not _is_ai_related(title):
                     continue
 
-                url = item.get("url") or f"https://news.ycombinator.com/item?id={item['id']}"
+                # Always link to the HN thread, not the external article: HN's value
+                # here is the discussion, and a thread URL is unique per item so it
+                # never collides with the same article ingested from its origin feed.
+                url = f"https://news.ycombinator.com/item?id={item['id']}"
                 article = build_normalized_article(
                     title=title,
                     url=url,

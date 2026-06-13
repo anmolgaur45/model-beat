@@ -1,0 +1,76 @@
+name: deploy-pipeline
+
+# Builds and deploys the Cloud Run Job on every push that touches the pipeline.
+# Tests gate the deploy, so a broken commit never reaches production.
+# One-time setup (Workload Identity Federation + repo variables) is in
+# pipeline/DEPLOY.md.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'pipeline/**'
+      - '.github/workflows/deploy-pipeline.yml'
+  workflow_dispatch: {}
+
+env:
+  PROJECT_ID: ai-news-calendar-493510
+  REGION: asia-south1
+  IMAGE: asia-south1-docker.pkg.dev/ai-news-calendar-493510/ainews/pipeline
+  JOB: ainews-pipeline
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: pipeline
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: pipeline/pyproject.toml
+      - name: Install
+        run: |
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -e ".[dev]"
+      - name: Lint
+        run: ruff check src/ tests/ scripts/
+      - name: Test
+        run: pytest tests/ -q
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    # Skip on forks / when WIF is not configured yet — keeps CI green pre-setup
+    if: vars.WIF_PROVIDER != '' && vars.DEPLOYER_SA != ''
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.DEPLOYER_SA }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+
+      - name: Build and push image
+        run: |
+          docker build -f pipeline/Dockerfile \
+            -t "$IMAGE:$GITHUB_SHA" -t "$IMAGE:latest" pipeline/
+          docker push "$IMAGE:$GITHUB_SHA"
+          docker push "$IMAGE:latest"
+
+      - name: Deploy Cloud Run Job (pinned to this commit)
+        run: |
+          sed "s|$IMAGE:latest|$IMAGE:$GITHUB_SHA|" pipeline/cloudrun-job.yaml > /tmp/job.yaml
+          gcloud run jobs replace /tmp/job.yaml --region "$REGION"

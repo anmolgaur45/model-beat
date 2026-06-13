@@ -42,6 +42,23 @@ def dedup_by_url(articles: list[NormalizedArticle]) -> list[NormalizedArticle]:
     return list(seen.values())
 
 
+def dedup_by_title(articles: list[NormalizedArticle]) -> list[NormalizedArticle]:
+    """Drop same-article rows that differ only by URL.
+
+    Google News hands out distinct redirect URLs for the same article across
+    feeds and fetches, so URL-keyed dedup misses them (see tasks/f1-findings.md).
+    """
+    seen: set[tuple[str, str]] = set()
+    result: list[NormalizedArticle] = []
+    for article in articles:
+        key = (article.source_name.lower(), article.title.lower())
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(article)
+    return result
+
+
 def filter_existing(conn: psycopg.Connection, articles: list[NormalizedArticle]) -> list[NormalizedArticle]:
     if not articles:
         return []
@@ -54,7 +71,26 @@ def filter_existing(conn: psycopg.Connection, articles: list[NormalizedArticle])
         )
         existing = {row[0] for row in cur.fetchall()}
 
-    return [a for a in articles if a.source_url not in existing]
+    candidates = [a for a in articles if a.source_url not in existing]
+    if not candidates:
+        return []
+
+    # Same article, different URL: match on (source_name, title) over the last 7 days
+    titles = [a.title for a in candidates]
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT lower(source_name), lower(title) FROM articles
+            WHERE published_at >= now() - interval '7 days' AND title = ANY(%s)
+            """,
+            (titles,),
+        )
+        existing_pairs = {(row[0], row[1]) for row in cur.fetchall()}
+
+    return [
+        a for a in candidates
+        if (a.source_name.lower(), a.title.lower()) not in existing_pairs
+    ]
 
 
 def upsert_articles(conn: psycopg.Connection, articles: list[NormalizedArticle]) -> None:
@@ -128,7 +164,7 @@ def main() -> None:
         raw = ingest_all()
         log.info("pipeline.ingested", total=len(raw))
 
-        unique = dedup_by_url(raw)
+        unique = dedup_by_title(dedup_by_url(raw))
         log.info("pipeline.deduped", unique=len(unique))
 
         new_articles = filter_existing(conn, unique)

@@ -12,7 +12,13 @@ class Settings(BaseSettings):
     database_ssl_ca: str = ""
 
     anthropic_api_key: str = ""
-    cluster_distance_threshold: float = 0.38
+    # 0.38 merged topically-similar-but-distinct stories (see tasks/f1-findings.md);
+    # 0.30 + the centroid check keeps multi-outlet coverage of the same story
+    # while splitting topical neighbors (picked by simulation sweep on 14d of prod data)
+    cluster_distance_threshold: float = 0.30
+    # arXiv papers in the same subfield embed within ~0.25-0.38 of each other,
+    # so they only cluster as near-duplicates
+    cluster_arxiv_threshold: float = 0.10
     cluster_window_hours: int = 48
 
     revalidate_url: str = ""

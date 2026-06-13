@@ -1,9 +1,13 @@
+import math
 import uuid
+from collections import Counter
 from datetime import datetime, timedelta, timezone
 
+import numpy as np
 import psycopg
 import structlog
 
+from ..config import settings
 from ..sources import get_organization
 
 log = structlog.get_logger()
@@ -11,6 +15,41 @@ log = structlog.get_logger()
 
 def _coverage_multiplier(distinct_orgs: int) -> float:
     return 1.0 + 0.25 * (distinct_orgs - 1)
+
+
+def normalize_score(raw: float) -> float:
+    """Compress raw score to the 1-10 display scale with log compression.
+
+    The old linear map (raw * 10 / 20, capped at 10) saturated: any cluster with
+    raw >= 19 displayed 10, erasing ranking among top stories. Log anchors:
+    raw 10 (single top-lab article, neutral impact) -> 5, raw 33 -> 8, raw 90 -> 10.
+    """
+    if raw <= 0:
+        return 1.0
+    return min(10.0, max(1.0, round(2.4 * math.log1p(raw / 1.43))))
+
+
+def effective_threshold(source_name: str, news_threshold: float | None = None) -> float:
+    if source_name.startswith("arXiv"):
+        return settings.cluster_arxiv_threshold
+    return news_threshold if news_threshold is not None else settings.cluster_distance_threshold
+
+
+def pick_headline(members: list[tuple[str, float, datetime]]) -> str:
+    """Pick cluster headline from the highest-authority member (earliest on tie).
+
+    members: (title, significance_base, published_at)
+    """
+    best = max(members, key=lambda m: (m[1], -m[2].timestamp()))
+    return best[0]
+
+
+def pick_category(categories: list[str | None], current: str) -> str:
+    """Majority vote over member categories, ignoring uncategorized."""
+    votes = Counter(c for c in categories if c and c != "uncategorized")
+    if not votes:
+        return current
+    return votes.most_common(1)[0][0]
 
 
 def compute_cluster_score(conn: psycopg.Connection, cluster_id: str) -> float:
@@ -42,9 +81,7 @@ def compute_cluster_score(conn: psycopg.Connection, cluster_id: str) -> float:
     distinct_orgs = len(org_base)
     raw = base_score * (max_impact / 5.0) * _coverage_multiplier(distinct_orgs)
 
-    # Normalize to 1–10 display scale
-    # Divisor 20: single top-lab article (sig_base=10) with impact=5 → 5; impact=9 → 9
-    return min(10.0, max(1.0, round(raw * 10.0 / 20.0)))
+    return normalize_score(raw)
 
 
 def _create_cluster(
@@ -65,6 +102,33 @@ def _create_cluster(
     return cluster_id
 
 
+def refresh_cluster_meta(conn: psycopg.Connection, cluster_id: str) -> None:
+    """Re-derive headline/category from members instead of trusting the seed article."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT title, significance_base, published_at, raw_category
+            FROM articles WHERE cluster_id = %s
+            """,
+            (cluster_id,),
+        )
+        rows = cur.fetchall()
+    if not rows:
+        return
+
+    headline = pick_headline([(r[0], float(r[1] or 0.0), r[2]) for r in rows])
+    with conn.cursor() as cur:
+        cur.execute("SELECT category FROM clusters WHERE id = %s", (cluster_id,))
+        current = (cur.fetchone() or ["uncategorized"])[0]
+    category = pick_category([r[3] for r in rows], current or "uncategorized")
+
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE clusters SET headline = %s, category = %s WHERE id = %s",
+            (headline, category, cluster_id),
+        )
+
+
 def _assign_articles(conn: psycopg.Connection, article_ids: list[str], cluster_id: str) -> None:
     with conn.cursor() as cur:
         cur.execute(
@@ -81,6 +145,29 @@ def _assign_articles(conn: psycopg.Connection, article_ids: list[str], cluster_i
             """,
             (cluster_id,),
         )
+    refresh_cluster_meta(conn, cluster_id)
+
+
+def _centroid_distance(
+    conn: psycopg.Connection, cluster_id: str, embedding: np.ndarray
+) -> float | None:
+    """Cosine distance from an article to the mean embedding of a cluster's members."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT embedding FROM articles WHERE cluster_id = %s AND embedding IS NOT NULL",
+            (cluster_id,),
+        )
+        rows = cur.fetchall()
+    if not rows:
+        return None
+
+    members = np.stack([np.asarray(r[0], dtype=np.float32) for r in rows])
+    centroid = members.mean(axis=0)
+    norm_c = np.linalg.norm(centroid)
+    norm_e = np.linalg.norm(embedding)
+    if norm_c < 1e-9 or norm_e < 1e-9:
+        return None
+    return float(1.0 - np.dot(centroid, embedding) / (norm_c * norm_e))
 
 
 _BACKFILL_MIN = 300
@@ -96,9 +183,14 @@ def cluster_pending(
 
     Only processes the latest 300 articles or the last 4 days, whichever is more.
     Uses article-relative windowing: each article searches for neighbors within
-    ±window_hours of its own published_at. This lets late-ingested articles still
-    cluster with contemporaneous articles, and naturally prevents cross-temporal
-    contamination (old articles only find other old articles as neighbors).
+    ±window_hours of its own published_at.
+
+    Join rules (see tasks/f1-findings.md for the audit that motivated them):
+    - per-source threshold: arXiv articles only merge as near-duplicates
+    - an article joins the nearest neighbor's cluster only if it is also within
+      threshold of that cluster's centroid (stops transitive chaining)
+    - new clusters are seeded with the article alone; neighbors join through
+      their own distance checks, never by bulk assignment
     """
     four_days_ago = datetime.now(timezone.utc) - timedelta(days=_BACKFILL_DAYS)
     window_td = timedelta(hours=window_hours)
@@ -116,7 +208,7 @@ def cluster_pending(
     with conn.cursor() as cur:
         cur.execute(
             """
-            SELECT id, title, raw_category, published_at, embedding
+            SELECT id, title, raw_category, published_at, embedding, source_name
             FROM articles
             WHERE cluster_id IS NULL AND embedding IS NOT NULL
             ORDER BY published_at DESC
@@ -130,14 +222,8 @@ def cluster_pending(
 
     log.info("clustering.pending", count=len(rows))
 
-    for article_id, title, category, published_at, embedding in rows:
-        # A previous iteration in this same batch may have already assigned this article
-        with conn.cursor() as cur:
-            cur.execute("SELECT cluster_id FROM articles WHERE id = %s", (article_id,))
-            row = cur.fetchone()
-            if row and row[0] is not None:
-                affected_clusters.add(str(row[0]))
-                continue
+    for article_id, title, category, published_at, embedding, source_name in rows:
+        threshold = effective_threshold(source_name or "", distance_threshold)
 
         # Article-relative window: search for neighbors within ±window_hours of this
         # article's publication date. Using the article's own date (not NOW()) means:
@@ -151,35 +237,33 @@ def cluster_pending(
         with conn.cursor() as cur:
             cur.execute(
                 "SELECT * FROM find_nearest_article(%s, %s, %s, %s, %s)",
-                (embedding, str(article_id), article_window_start, distance_threshold, article_window_end),
+                (embedding, str(article_id), article_window_start, threshold, article_window_end),
             )
             neighbors = cur.fetchall()
             # Columns: id, cluster_id, title, distance
 
-        if not neighbors:
-            # No similar articles → create solo cluster
-            cluster_id = _create_cluster(conn, title, category or "uncategorized", published_at)
-            _assign_articles(conn, [str(article_id)], cluster_id)
-            affected_clusters.add(cluster_id)
-            conn.commit()
-            total += 1
-            continue
+        emb = np.asarray(embedding, dtype=np.float32)
 
-        # Prefer joining an existing cluster if any neighbor has one
-        existing_cluster: str | None = None
+        # Candidate clusters in nearest-neighbor order; join the first whose
+        # centroid is also within threshold
+        joined: str | None = None
+        tried: set[str] = set()
         for n in neighbors:
-            if n[1] is not None:  # n[1] = cluster_id column
-                existing_cluster = str(n[1])
+            if n[1] is None or str(n[1]) in tried:
+                continue
+            candidate = str(n[1])
+            tried.add(candidate)
+            dist = _centroid_distance(conn, candidate, emb)
+            if dist is not None and dist < threshold:
+                joined = candidate
                 break
 
-        if existing_cluster:
-            _assign_articles(conn, [str(article_id)], existing_cluster)
-            affected_clusters.add(existing_cluster)
+        if joined:
+            _assign_articles(conn, [str(article_id)], joined)
+            affected_clusters.add(joined)
         else:
-            # No neighbor has a cluster → create new one for all of them + this article
             cluster_id = _create_cluster(conn, title, category or "uncategorized", published_at)
-            neighbor_ids = [str(n[0]) for n in neighbors]
-            _assign_articles(conn, [str(article_id)] + neighbor_ids, cluster_id)
+            _assign_articles(conn, [str(article_id)], cluster_id)
             affected_clusters.add(cluster_id)
 
         conn.commit()

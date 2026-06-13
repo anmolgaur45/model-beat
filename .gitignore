@@ -15,14 +15,14 @@ frontend/build/
 
 # ── Pipeline (Python) ──────────────────────────────
 pipeline/.venv/
-pipeline/__pycache__/
-pipeline/src/**/__pycache__/
+pipeline/**/__pycache__/
 pipeline/*.egg-info/
 pipeline/**/*.egg-info/
 pipeline/dist/
 pipeline/build/
 pipeline/.ruff_cache/
 pipeline/.pytest_cache/
+pipeline/eval/
 
 # ── Shared ──────────────────────────────────────────
 # Catch leftover build artifacts at any depth

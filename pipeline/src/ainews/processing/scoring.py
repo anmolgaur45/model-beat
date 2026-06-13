@@ -39,17 +39,21 @@ def _format_articles(batch: list[tuple]) -> str:
     return "\n".join(lines)
 
 
-def _parse_batch_response(raw: str, batch: list[tuple]) -> dict[str, int]:
-    """Parse JSON array response, return id→score dict. Falls back to 5 on any error."""
+def _parse_batch_response(raw: str, batch: list[tuple]) -> tuple[dict[str, int], bool]:
+    """Parse JSON array response, return (id→score dict, parse_failed).
+
+    Falls back to neutral 5 on any error — the failure flag makes those visible
+    in logs instead of silently blending into genuine 5s.
+    """
     try:
         if raw.startswith("```"):
             parts = raw.split("```")
             raw = parts[1].lstrip("json").strip() if len(parts) > 1 else raw
         results = json.loads(raw)
-        return {str(r["id"]): max(1, min(10, int(r["score"]))) for r in results}
-    except Exception:
-        # Return neutral score for all articles in the batch
-        return {str(row[0]): 5 for row in batch}
+        return {str(r["id"]): max(1, min(10, int(r["score"]))) for r in results}, False
+    except Exception as exc:
+        log.warning("scoring.parse_failed", error=str(exc), raw_prefix=raw[:120])
+        return {str(row[0]): 5 for row in batch}, True
 
 
 _BACKFILL_MIN = 300
@@ -88,6 +92,7 @@ def score_pending(conn: psycopg.Connection, batch_size: int = 10) -> int:
 
     client = Anthropic(api_key=settings.anthropic_api_key)
     total = 0
+    fallback_batches = 0
 
     for i in range(0, len(rows), batch_size):
         batch = rows[i : i + batch_size]
@@ -99,10 +104,13 @@ def score_pending(conn: psycopg.Connection, batch_size: int = 10) -> int:
                 max_tokens=512,
                 messages=[{"role": "user", "content": prompt}],
             )
-            scores = _parse_batch_response(response.content[0].text.strip(), batch)
+            scores, failed = _parse_batch_response(response.content[0].text.strip(), batch)
+            if failed:
+                fallback_batches += 1
         except Exception as exc:
             log.warning("scoring.batch_failed", batch_start=i, error=str(exc))
             scores = {str(row[0]): 5 for row in batch}
+            fallback_batches += 1
 
         with conn.cursor() as cur:
             for article_id, _, _, _ in batch:
@@ -117,5 +125,5 @@ def score_pending(conn: psycopg.Connection, batch_size: int = 10) -> int:
         if total % 100 == 0:
             log.info("scoring.progress", scored=total, total=len(rows))
 
-    log.info("scoring.done", scored=total)
+    log.info("scoring.done", scored=total, fallback_batches=fallback_batches)
     return total

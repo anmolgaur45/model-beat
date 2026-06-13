@@ -10,6 +10,31 @@ from ..sources import Source
 
 log = structlog.get_logger()
 
+# Third-party articles arriving via Google News search feeds carry the
+# aggregator tier, not the feed's configured authority
+_AGGREGATOR_AUTHORITY = 3.0
+
+
+def extract_publisher(entry) -> str | None:
+    """Real publisher of a Google News RSS item (<source> tag), if present."""
+    src = entry.get("source")
+    if src and src.get("title"):
+        return str(src["title"]).strip() or None
+    return None
+
+
+def strip_publisher_suffix(title: str, publisher: str) -> str:
+    """Google News titles end with ' - Publisher'; drop it so the headline is clean."""
+    suffix = f" - {publisher}"
+    if title.endswith(suffix):
+        return title[: -len(suffix)].rstrip()
+    return title
+
+
+def publisher_matches_org(publisher: str, organization: str) -> bool:
+    p, o = publisher.lower(), organization.lower()
+    return o in p or p in o
+
 
 def ingest_rss(source: Source) -> list[NormalizedArticle]:
     try:
@@ -42,8 +67,13 @@ def ingest_rss(source: Source) -> list[NormalizedArticle]:
             if parsed_time else None
         )
 
+        title = entry.get("title", "")
+        publisher = extract_publisher(entry)
+        if publisher:
+            title = strip_publisher_suffix(title, publisher)
+
         article = build_normalized_article(
-            title=entry.get("title", ""),
+            title=title,
             url=url,
             excerpt=excerpt,
             author=author,
@@ -52,6 +82,14 @@ def ingest_rss(source: Source) -> list[NormalizedArticle]:
         )
         if not article:
             continue
+
+        # Google News search feeds deliver third-party articles: attribute the real
+        # publisher (citation correctness) and only keep the feed's authority when
+        # the publisher IS the org the feed tracks (e.g. anthropic.com site: feeds)
+        if publisher:
+            article.source_name = publisher
+            if not publisher_matches_org(publisher, source.organization):
+                article.significance_base = min(article.significance_base, _AGGREGATOR_AUTHORITY)
         if is_financial_noise(article.title):
             continue
         if not is_english(article.title):

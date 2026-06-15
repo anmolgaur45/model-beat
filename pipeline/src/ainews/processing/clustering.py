@@ -129,6 +129,22 @@ def refresh_cluster_meta(conn: psycopg.Connection, cluster_id: str) -> None:
         )
 
 
+def _score_cluster(conn: psycopg.Connection, cluster_id: str) -> None:
+    """Compute and persist a cluster's significance immediately.
+
+    Scoring runs inline in the clustering loop (not only in the end-of-run batch)
+    so an interrupted run — e.g. a large arXiv batch that times out — can never
+    leave a cluster stranded at the placeholder score 0. The end-of-run pass still
+    re-scores to absorb merge effects.
+    """
+    score = compute_cluster_score(conn, cluster_id)
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE clusters SET significance_score = %s WHERE id = %s",
+            (score, cluster_id),
+        )
+
+
 def _assign_articles(conn: psycopg.Connection, article_ids: list[str], cluster_id: str) -> None:
     with conn.cursor() as cur:
         cur.execute(
@@ -391,10 +407,12 @@ def cluster_pending(
 
         if joined:
             _assign_articles(conn, [str(article_id)], joined)
+            _score_cluster(conn, joined)
             affected_clusters.add(joined)
         else:
             cluster_id = _create_cluster(conn, title, category or "uncategorized", published_at)
             _assign_articles(conn, [str(article_id)], cluster_id)
+            _score_cluster(conn, cluster_id)
             affected_clusters.add(cluster_id)
 
         conn.commit()

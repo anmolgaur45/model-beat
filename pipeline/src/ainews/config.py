@@ -21,6 +21,13 @@ class Settings(BaseSettings):
     cluster_arxiv_threshold: float = 0.10
     cluster_window_hours: int = 48
 
+    # Cap new articles processed per run. The daily arXiv dump (~600 papers, all
+    # landing in one run) otherwise pushes clustering past the 30-min Cloud Run
+    # timeout, since each article costs ~9 round trips to Cloud SQL. The overflow
+    # is re-fetched and drained across the day's later runs (4 runs x 250 = 1000/day
+    # capacity, comfortably above daily volume). See tasks/changes.md.
+    max_new_articles_per_run: int = 250
+
     revalidate_url: str = ""
     cron_secret: str = ""
 

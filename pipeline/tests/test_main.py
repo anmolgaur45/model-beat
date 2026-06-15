@@ -1,17 +1,22 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
-from ainews.main import dedup_by_title, dedup_by_url
+from ainews.main import cap_new_articles, dedup_by_title, dedup_by_url
 from ainews.models import NormalizedArticle
 
 
-def _make(url: str, title: str = "Test Article", source: str = "test-source") -> NormalizedArticle:
+def _make(
+    url: str,
+    title: str = "Test Article",
+    source: str = "test-source",
+    published_at: str | None = None,
+) -> NormalizedArticle:
     return NormalizedArticle(
         title=title,
         body_excerpt=None,
         source_name=source,
         source_url=url,
         author=None,
-        published_at=datetime.now(tz=timezone.utc).isoformat(),
+        published_at=published_at or datetime.now(tz=timezone.utc).isoformat(),
         raw_category="uncategorized",
         significance_base=1.0,
     )
@@ -63,3 +68,30 @@ def test_dedup_by_title_keeps_same_title_across_sources():
     a1 = _make("https://a.com/1", title="Big Launch", source="Reuters")
     a2 = _make("https://b.com/1", title="Big Launch", source="The Verge")
     assert len(dedup_by_title([a1, a2])) == 2
+
+
+def _ts(days_ago: int) -> str:
+    return (datetime.now(tz=timezone.utc) - timedelta(days=days_ago)).isoformat()
+
+
+def test_cap_under_limit_returns_all():
+    articles = [_make(f"https://a.com/{i}") for i in range(5)]
+    kept, deferred = cap_new_articles(articles, 10)
+    assert kept == articles
+    assert deferred == 0
+
+
+def test_cap_keeps_newest_and_reports_deferred():
+    # oldest -> newest
+    articles = [_make(f"https://a.com/{i}", published_at=_ts(days_ago=5 - i)) for i in range(5)]
+    kept, deferred = cap_new_articles(articles, 2)
+    assert deferred == 3
+    # the two newest survive (i == 4 then i == 3)
+    assert [a.source_url for a in kept] == ["https://a.com/4", "https://a.com/3"]
+
+
+def test_cap_zero_limit_is_noop():
+    articles = [_make("https://a.com/1")]
+    kept, deferred = cap_new_articles(articles, 0)
+    assert kept == articles
+    assert deferred == 0

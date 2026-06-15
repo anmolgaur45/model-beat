@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import type { Article, Cluster } from '@/types/article'
 import { StoryCard } from './StoryCard'
 import { FeatureCard } from './FeatureCard'
@@ -10,6 +10,9 @@ import type { ScoreStyle } from './ScoreBadge'
 type ClusterWithArticles = Cluster & { articles: Article[] }
 
 const PAGE_SIZE = 6
+// Only a genuinely high-signal story earns the prominent "top story" treatment.
+// Below this, the lead is rendered as an ordinary card so a slow day isn't dressed up.
+const TOP_STORY_MIN = 6
 
 // ─── Skeleton ─────────────────────────────────────────────────────────────────
 
@@ -66,14 +69,33 @@ export function DateSection({ date, clusters, scoreStyle = 'orb' }: Props) {
 
   const sorted = [...clusters].sort((a, b) => b.significance_score - a.significance_score)
   const label = formatDateLabel(date)
-  const feature = sorted[0] ?? null
-  const rest = sorted.slice(1)
-  const visible = rest.slice(0, visibleCount)
-  const hasMore = visibleCount < rest.length
+
+  // Promote the top cluster to the hero "top story" card only when it clears the
+  // significance bar. Otherwise everything is an ordinary card in the list.
+  const lead = sorted[0] && (sorted[0].significance_score ?? 0) >= TOP_STORY_MIN ? sorted[0] : null
+  const cards = lead ? sorted.slice(1) : sorted
+  const visible = cards.slice(0, visibleCount)
+  const hasMore = visibleCount < cards.length
 
   // Honest signalling: stories ran, but nothing reached the "notable" tier (>= 7).
   // Better to say so than to dress up a slow news day.
   const isQuietDay = sorted.length > 0 && (sorted[0].significance_score ?? 0) < 7
+
+  // Infinite scroll: reveal the next page when the sentinel scrolls into view.
+  const sentinelRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => { setVisibleCount(PAGE_SIZE) }, [date])
+  useEffect(() => {
+    const el = sentinelRef.current
+    if (!el || !hasMore) return
+    const obs = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) setVisibleCount((n) => n + PAGE_SIZE)
+      },
+      { rootMargin: '600px 0px' },
+    )
+    obs.observe(el)
+    return () => obs.disconnect()
+  }, [hasMore, visible.length])
 
   return (
     <section>
@@ -88,15 +110,11 @@ export function DateSection({ date, clusters, scoreStyle = 'orb' }: Props) {
         <EmptyState dateLabel={label} />
       ) : (
         <>
-          {feature && <FeatureCard cluster={feature} />}
+          {lead && <FeatureCard cluster={lead} />}
           {visible.map((cluster) => (
             <StoryCard key={cluster.id} cluster={cluster} scoreStyle={scoreStyle} />
           ))}
-          {hasMore && (
-            <button className="anc-more" onClick={() => setVisibleCount((n) => n + PAGE_SIZE)}>
-              Load more stories ({rest.length - visibleCount})
-            </button>
-          )}
+          {hasMore && <div ref={sentinelRef} className="anc-scroll-sentinel" aria-hidden />}
         </>
       )}
     </section>

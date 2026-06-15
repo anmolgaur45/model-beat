@@ -85,15 +85,6 @@ export default function HomePage() {
 
   // ── Queries ──────────────────────────────────────────────────────────────────
 
-  const { data: lastIngested } = trpc.articles.getLastIngested.useQuery(undefined, {
-    staleTime: 5 * 60_000,
-  })
-
-  const isStale = lastIngested === null || (
-    lastIngested != null &&
-    Date.now() - new Date(lastIngested).getTime() > 8 * 3_600_000
-  )
-
   const { data: topStories } = trpc.articles.getTopStories.useQuery(
     { days: 7, limit: 6 },
     { staleTime: 5 * 60_000 },
@@ -164,13 +155,6 @@ export default function HomePage() {
 
       {/* Glass nav */}
       <NavBar theme={theme} onToggleTheme={toggleTheme} query={search} onQuery={setSearch} />
-
-      {/* Stale data banner */}
-      {isStale && (
-        <div className="w-full px-4 py-2 text-center text-sm bg-amber-500/10 border-b border-amber-500/20 text-amber-400">
-          Pipeline hasn&apos;t run in over 8 hours — stories may be outdated
-        </div>
-      )}
 
       {/* Ticker */}
       {timelineMode && <Ticker stories={topStories ?? []} />}

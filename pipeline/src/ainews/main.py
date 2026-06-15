@@ -93,6 +93,21 @@ def filter_existing(conn: psycopg.Connection, articles: list[NormalizedArticle])
     ]
 
 
+def cap_new_articles(
+    articles: list[NormalizedArticle], limit: int
+) -> tuple[list[NormalizedArticle], int]:
+    """Keep the newest `limit` articles; defer the rest to a later run.
+
+    Bounds per-run work so a large batch (the daily arXiv dump) can't push the
+    pipeline past the Cloud Run timeout. Deferred articles aren't stored, so they
+    reappear as "new" next run and drain newest-first across the day's runs.
+    """
+    if limit <= 0 or len(articles) <= limit:
+        return articles, 0
+    ordered = sorted(articles, key=lambda a: a.published_at, reverse=True)
+    return ordered[:limit], len(articles) - limit
+
+
 def upsert_articles(conn: psycopg.Connection, articles: list[NormalizedArticle]) -> None:
     if not articles:
         return
@@ -169,6 +184,10 @@ def main() -> None:
 
         new_articles = filter_existing(conn, unique)
         log.info("pipeline.new", new=len(new_articles), skipped=len(unique) - len(new_articles))
+
+        new_articles, deferred = cap_new_articles(new_articles, settings.max_new_articles_per_run)
+        if deferred:
+            log.info("pipeline.capped", kept=len(new_articles), deferred=deferred)
 
         upsert_articles(conn, new_articles)
         log.info("pipeline.upserted", count=len(new_articles))

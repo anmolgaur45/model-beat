@@ -907,6 +907,9 @@ a { cursor: pointer; text-decoration: none; color: inherit; }
 .anc-more:hover { color: var(--text); border-color: var(--text3); }
 .anc-more:disabled { opacity: 0.5; cursor: not-allowed; }
 
+/* Invisible trip-wire for infinite scroll; sits below the last visible card */
+.anc-scroll-sentinel { height: 1px; width: 100%; }
+
 /* ─── Skeleton shimmer ───────────────────────────────────────────────────────── */
 
 .anc-skel {

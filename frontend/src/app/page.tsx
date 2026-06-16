@@ -83,6 +83,12 @@ export default function HomePage() {
     if (search.trim().length > 0) setRecapMode(false)
   }, [search])
 
+  // Land on /?q=… running that search — powers the WebSite SearchAction (sitelinks box)
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search).get('q')
+    if (q) setSearch(q)
+  }, [])
+
   // ── Queries ──────────────────────────────────────────────────────────────────
 
   const { data: topStories } = trpc.articles.getTopStories.useQuery(
@@ -163,9 +169,9 @@ export default function HomePage() {
       {timelineMode && (
         <header className="anc-hero" suppressHydrationWarning>
           <div className="anc-kicker">The AI news that actually mattered</div>
-          <div className="anc-date-heading">
+          <h1 className="anc-date-heading">
             {heroDisplay} <span className="dim">— {heroSub}</span>
-          </div>
+          </h1>
           <div className="anc-hero-sub">
             <b>{(timelineData ?? []).length} {(timelineData ?? []).length === 1 ? 'story' : 'stories'}</b>
             {selectedCategory !== 'all' ? ` in ${CATEGORY_LABELS[selectedCategory]}` : ' today'},

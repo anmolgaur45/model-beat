@@ -13,7 +13,26 @@ const CATEGORY_COLORS = [
   '#71717a', // zinc — opinion
 ]
 
-export async function GET() {
+function longDate(date: string): string | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return null
+  const d = new Date(date + 'T12:00:00Z')
+  if (Number.isNaN(d.getTime())) return null
+  return d.toLocaleDateString('en-US', {
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+    timeZone: 'UTC',
+  })
+}
+
+export async function GET(req: Request) {
+  const dateParam = new URL(req.url).searchParams.get('date')
+  const dateLabel = dateParam ? longDate(dateParam) : null
+
+  const subtitle = dateLabel
+    ? `The AI news that mattered · ${dateLabel}`
+    : 'Daily AI news · Deduplicated · Ranked by significance'
+
   return new ImageResponse(
     (
       <div
@@ -40,7 +59,7 @@ export async function GET() {
           AI News Calendar
         </div>
         <div style={{ color: '#71717a', fontSize: 30, letterSpacing: '-0.5px' }}>
-          Daily AI news · Deduplicated · Ranked by significance
+          {subtitle}
         </div>
         {/* Category colour strip */}
         <div style={{ display: 'flex', gap: 10, marginTop: 72 }}>

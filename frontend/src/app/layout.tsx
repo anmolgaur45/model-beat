@@ -4,6 +4,7 @@ import { Analytics } from '@vercel/analytics/next'
 import { SpeedInsights } from '@vercel/speed-insights/next'
 import './globals.css'
 import { Providers } from './providers'
+import { SiteFooter } from '@/components/SiteFooter'
 
 const geistSans = Geist({
   variable: '--font-geist-sans',
@@ -30,6 +31,10 @@ export const metadata: Metadata = {
   description:
     'The AI news that actually mattered, organized by day — deduplicated across sources, ranked by significance, every story cited. Track model releases, research, and company news from the top AI labs.',
   keywords: ['AI news', 'artificial intelligence', 'machine learning', 'GPT', 'Claude', 'Gemini', 'LLM'],
+  alternates: {
+    canonical: '/',
+    types: { 'application/rss+xml': '/feed.xml' },
+  },
   openGraph: {
     type: 'website',
     siteName: 'AI News Calendar',
@@ -43,9 +48,48 @@ export const metadata: Metadata = {
     description: 'The AI news that actually mattered, organized by day — deduplicated, ranked by significance, every source cited.',
     images: ['/api/og'],
   },
-  robots: { index: true, follow: true },
+  robots: {
+    index: true,
+    follow: true,
+    // News/Discover: let Google show the largest image preview and full snippet
+    googleBot: {
+      index: true,
+      follow: true,
+      'max-image-preview': 'large',
+      'max-snippet': -1,
+      'max-video-preview': -1,
+    },
+  },
   icons: { icon: '/favicon.ico' },
 }
+
+const SITE = process.env.NEXT_PUBLIC_URL ?? 'http://localhost:3000'
+
+const SITE_JSONLD = [
+  {
+    '@context': 'https://schema.org',
+    '@type': 'WebSite',
+    name: 'AI News Calendar',
+    url: SITE,
+    description:
+      'The AI news that actually mattered, organized by day — deduplicated across sources, ranked by significance, every story cited.',
+    potentialAction: {
+      '@type': 'SearchAction',
+      target: {
+        '@type': 'EntryPoint',
+        urlTemplate: `${SITE}/?q={search_term_string}`,
+      },
+      'query-input': 'required name=search_term_string',
+    },
+  },
+  {
+    '@context': 'https://schema.org',
+    '@type': 'NewsMediaOrganization',
+    name: 'AI News Calendar',
+    url: SITE,
+    logo: `${SITE}/api/og`,
+  },
+]
 
 export default function RootLayout({
   children,
@@ -60,7 +104,12 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <body className="min-h-full" suppressHydrationWarning>
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(SITE_JSONLD) }}
+        />
         <Providers>{children}</Providers>
+        <SiteFooter />
         <Analytics />
         <SpeedInsights />
       </body>

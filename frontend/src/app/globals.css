@@ -758,6 +758,7 @@ a { cursor: pointer; text-decoration: none; color: inherit; }
 .anc-feature .anc-sum { margin: 12px 0 0; color: var(--text2); font-size: 14px; line-height: 1.65; max-width: 660px; }
 .anc-fsrc { display: flex; align-items: center; gap: 16px; margin-top: 16px; flex-wrap: wrap; }
 .anc-src { display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--text2); white-space: nowrap; }
+a.anc-src:hover { color: var(--accent-text); }
 .anc-read { display: inline-flex; align-items: center; gap: 6px; color: var(--accent-text); font-weight: 550; font-size: 13px; white-space: nowrap; }
 .anc-read:hover { text-decoration: underline; }
 .anc-fsrc .anc-read { margin-left: auto; }
@@ -909,6 +910,27 @@ a { cursor: pointer; text-decoration: none; color: inherit; }
 
 /* Invisible trip-wire for infinite scroll; sits below the last visible card */
 .anc-scroll-sentinel { height: 1px; width: 100%; }
+
+/* ─── Per-day archive page (/day/[date]) ─────────────────────────────────────── */
+/* Centered single column (no sidebar), same card width as the homepage feed. */
+.anc-daywrap { max-width: 920px; margin: 0 auto; padding: 28px 20px 80px; position: relative; z-index: 2; }
+.anc-dayfeed { margin-top: 22px; }
+.anc-day-back { display: inline-block; margin-bottom: 14px; font-size: 13px; color: var(--text2); }
+.anc-day-back:hover { color: var(--accent-text); }
+
+/* ─── Site footer (internal links / crawl paths) ─────────────────────────────── */
+.anc-footer { position: relative; z-index: 2; border-top: 1px solid var(--line); margin-top: 40px; padding: 40px 24px 28px; }
+.anc-footer-inner { max-width: 1100px; margin: 0 auto; display: flex; flex-wrap: wrap; gap: 40px; }
+.anc-footer-brand { flex: 1 1 260px; min-width: 220px; }
+.anc-footer-name { font-family: var(--font-display); font-weight: 700; font-size: 17px; color: var(--text); letter-spacing: -0.01em; }
+.anc-footer-brand p { margin-top: 8px; color: var(--text3); font-size: 13px; line-height: 1.6; max-width: 42ch; }
+.anc-footer-col { display: flex; flex-direction: column; gap: 8px; }
+.anc-footer-col h2 { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--text3); margin: 0 0 4px; }
+.anc-footer-col a { color: var(--text2); font-size: 13.5px; }
+.anc-footer-col a:hover { color: var(--accent-text); }
+.anc-footer-days { display: flex; flex-wrap: wrap; gap: 6px 14px; max-width: 320px; }
+.anc-footer-days a { font-size: 12.5px; }
+.anc-footer-base { max-width: 1100px; margin: 28px auto 0; color: var(--text3); font-size: 12px; }
 
 /* ─── Skeleton shimmer ───────────────────────────────────────────────────────── */
 

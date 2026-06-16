@@ -30,6 +30,7 @@ export interface Cluster {
   significance_score: number
   first_published_at: string // ISO timestamp
   article_count: number
+  summary: string | null // AI synthesis (Phase J); null when not yet generated
   created_at: string
   // joined from articles when fetched
   articles?: Article[]

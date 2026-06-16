@@ -28,6 +28,18 @@ class Settings(BaseSettings):
     # capacity, comfortably above daily volume). See tasks/changes.md.
     max_new_articles_per_run: int = 250
 
+    # AI summaries (Phase J): Gemini 3.1 Flash-Lite on Vertex AI, billed to GCP
+    # credits. Auth is ADC (no key). Summaries are skipped when vertex_project is
+    # empty, so CI / unconfigured envs stay green (mirrors the scoring skip).
+    vertex_project: str = ""
+    vertex_location: str = "global"
+    gemini_model: str = "gemini-3.1-flash-lite"
+    summary_min_score: int = 4
+    # Cap Gemini calls per run so a backlog (or the first run after launch) can't
+    # push the pipeline past the Cloud Run timeout. Steady state is ~30 eligible
+    # clusters/run, well under this; a backlog drains newest-first across runs.
+    summary_max_per_run: int = 150
+
     revalidate_url: str = ""
     cron_secret: str = ""
 

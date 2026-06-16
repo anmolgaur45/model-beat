@@ -12,6 +12,7 @@ from .ingestors.github import ingest_github
 from .processing.embeddings import embed_pending
 from .processing.scoring import score_pending
 from .processing.clustering import cluster_pending
+from .processing.summarize import summarize_pending
 
 log = structlog.get_logger()
 
@@ -205,7 +206,17 @@ def main() -> None:
         )
         log.info("pipeline.clustered", count=clustered)
 
-        log.info("pipeline.done", ingested=len(new_articles), embedded=embedded, scored=scored, clustered=clustered)
+        summarized = summarize_pending(conn)
+        log.info("pipeline.summarized", count=summarized)
+
+        log.info(
+            "pipeline.done",
+            ingested=len(new_articles),
+            embedded=embedded,
+            scored=scored,
+            clustered=clustered,
+            summarized=summarized,
+        )
         record_run(conn, articles_ingested=len(new_articles), clusters_updated=clustered)
         notify_revalidate()
     except Exception as exc:

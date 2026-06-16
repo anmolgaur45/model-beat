@@ -89,6 +89,8 @@ spec:
                     secretKeyRef:
                       name: anthropic-api-key
                       key: "1"
+                - name: VERTEX_PROJECT
+                  value: "ai-news-calendar-493510"
                 - name: REVALIDATE_URL
                   value: "https://ai-news-calendar.vercel.app/api/revalidate"
                 - name: CRON_SECRET

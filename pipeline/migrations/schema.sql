@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS clusters (
   significance_score  FLOAT DEFAULT 0,
   first_published_at  TIMESTAMPTZ NOT NULL,
   article_count       INT DEFAULT 1,
+  summary             TEXT,
   created_at          TIMESTAMPTZ DEFAULT NOW()
 );
 

@@ -25,15 +25,21 @@ export function FeatureCard({ cluster }: Props) {
           {primary && <span className="anc-ftime">{timeAgo(primary.published_at)}</span>}
         </div>
         <h3>{cluster.headline}</h3>
-        {primary?.body_excerpt && (
-          <p className="anc-sum">{primary.body_excerpt}</p>
+        {(cluster.summary ?? primary?.body_excerpt) && (
+          <p className="anc-sum">{cluster.summary ?? primary?.body_excerpt}</p>
         )}
         <div className="anc-fsrc">
           {cluster.articles.slice(0, 3).map((a) => (
-            <span className="anc-src" key={a.id}>
+            <a
+              className="anc-src"
+              key={a.id}
+              href={a.source_url}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
               <SourceBubble name={a.source_name} size={17} />
               {a.source_name}
-            </span>
+            </a>
           ))}
           {primary && (
             <a

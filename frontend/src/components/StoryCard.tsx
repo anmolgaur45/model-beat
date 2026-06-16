@@ -78,8 +78,8 @@ export function StoryCard({ cluster, showDate = false, scoreStyle = 'orb', highl
             className="overflow-hidden"
           >
             <div className="anc-card-body">
-              {primary?.body_excerpt && (
-                <p className="anc-sum">{primary.body_excerpt}</p>
+              {(cluster.summary ?? primary?.body_excerpt) && (
+                <p className="anc-sum">{cluster.summary ?? primary?.body_excerpt}</p>
               )}
               {cluster.articles.length > 0 && (
                 <div className="anc-srclist">

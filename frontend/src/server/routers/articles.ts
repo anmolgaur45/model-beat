@@ -242,6 +242,7 @@ export const articlesRouter = router({
           significance_score: 0,
           first_published_at: article.published_at,
           article_count: 1,
+          summary: null,
           created_at: article.created_at,
           articles: [article],
         } as Cluster & { articles: Article[] }

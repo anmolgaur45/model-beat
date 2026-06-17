@@ -65,6 +65,13 @@ memory/
 # design handoff artifacts (not source code)
 handoff_extracted/
 *-handoff.zip
+design_handoff_recent_refinements/
+design_handoff_model_page/
+design_handoff_charts/
+design_handoff_branding/
+
+# reference screenshots (not source code)
+screenshots/
 
 # supabase local state
 frontend/supabase/.branches/

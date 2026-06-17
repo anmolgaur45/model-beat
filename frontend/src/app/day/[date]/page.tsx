@@ -6,6 +6,7 @@ import { appRouter } from '@/server/routers/_app'
 import { createContext } from '@/server/trpc'
 import { FeatureCard } from '@/components/FeatureCard'
 import { StoryCard } from '@/components/StoryCard'
+import { NavBar } from '@/components/NavBar'
 
 // Match the homepage's top-story gate: only a high-signal lead gets the hero card.
 const TOP_STORY_MIN = 6
@@ -144,18 +145,7 @@ export default async function DayPage({
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
 
-      {/* Static server nav (no theme toggle — this is an archive page) */}
-      <div className="anc-navwrap nav-scrolled">
-        <nav className="anc-nav">
-          <Link className="anc-brand" href="/">
-            <span className="anc-mark"><span className="anc-mark-dot" /></span>
-            <span className="anc-brand-name">AI News Calendar</span>
-          </Link>
-          <span style={{ flex: 1 }} />
-          <Link className="anc-navlink" href="/models">Models</Link>
-          <Link className="anc-navlink" href="/">Today</Link>
-        </nav>
-      </div>
+      <NavBar />
 
       <div className="ghost-number">{ghostNum}</div>
 

@@ -25,8 +25,8 @@ const bricolage = Bricolage_Grotesque({
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_URL ?? 'http://localhost:3000'),
   title: {
-    default: 'AI News Calendar — the AI news that actually mattered',
-    template: '%s | AI News Calendar',
+    default: 'Model Beat — Covering the AI beat, every day.',
+    template: '%s | Model Beat',
   },
   description:
     'The AI news that actually mattered, organized by day — deduplicated across sources, ranked by significance, every story cited. Track model releases, research, and company news from the top AI labs.',
@@ -37,14 +37,14 @@ export const metadata: Metadata = {
   },
   openGraph: {
     type: 'website',
-    siteName: 'AI News Calendar',
-    title: 'AI News Calendar — the AI news that actually mattered',
+    siteName: 'Model Beat',
+    title: 'Model Beat — Covering the AI beat, every day.',
     description: 'The AI news that actually mattered, organized by day — deduplicated, ranked by significance, every source cited.',
-    images: [{ url: '/api/og', width: 1200, height: 630, alt: 'AI News Calendar' }],
+    images: [{ url: '/api/og', width: 1200, height: 630, alt: 'Model Beat' }],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'AI News Calendar — the AI news that actually mattered',
+    title: 'Model Beat — Covering the AI beat, every day.',
     description: 'The AI news that actually mattered, organized by day — deduplicated, ranked by significance, every source cited.',
     images: ['/api/og'],
   },
@@ -60,7 +60,13 @@ export const metadata: Metadata = {
       'max-video-preview': -1,
     },
   },
-  icons: { icon: '/favicon.ico' },
+  icons: {
+    icon: [
+      { url: '/favicon-eq.svg', type: 'image/svg+xml' },
+      { url: '/favicon.ico' },
+    ],
+    apple: '/icon-eq.svg',
+  },
 }
 
 const SITE = process.env.NEXT_PUBLIC_URL ?? 'http://localhost:3000'
@@ -69,7 +75,7 @@ const SITE_JSONLD = [
   {
     '@context': 'https://schema.org',
     '@type': 'WebSite',
-    name: 'AI News Calendar',
+    name: 'Model Beat',
     url: SITE,
     description:
       'The AI news that actually mattered, organized by day — deduplicated across sources, ranked by significance, every story cited.',
@@ -85,7 +91,7 @@ const SITE_JSONLD = [
   {
     '@context': 'https://schema.org',
     '@type': 'NewsMediaOrganization',
-    name: 'AI News Calendar',
+    name: 'Model Beat',
     url: SITE,
     logo: `${SITE}/api/og`,
   },

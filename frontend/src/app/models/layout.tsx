@@ -3,7 +3,7 @@ import type { Metadata } from 'next'
 export const metadata: Metadata = {
   title: 'Model Release Tracker',
   description:
-    'Every new AI model release, newest first — GPT, Claude, Gemini, Llama, Qwen, DeepSeek and more, deduplicated across sources and ranked by significance.',
+    'Every AI model released this past year — GPT, Claude, Gemini, Llama, Qwen, DeepSeek and more, with benchmark scores (GPQA, MATH, SWE-bench, Epoch Capabilities Index) and the news coverage of each release.',
   alternates: { canonical: '/models' },
 }
 

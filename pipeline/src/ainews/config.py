@@ -40,6 +40,15 @@ class Settings(BaseSettings):
     # clusters/run, well under this; a backlog drains newest-first across runs.
     summary_max_per_run: int = 150
 
+    # Model registry (Phase K): Epoch AI's free, CC-BY datasets back a canonical
+    # tracker of models released in the last `model_roster_days`, with benchmark
+    # scores. No LLM, no paid API — just two cheap CSV/zip fetches per run.
+    model_roster_days: int = 365
+    epoch_models_url: str = "https://epoch.ai/data/notable_ai_models.csv"
+    epoch_benchmark_url: str = "https://epoch.ai/data/benchmark_data.zip"
+    # Pricing & specs (Phase O1) from OpenRouter's public, no-auth model catalog.
+    openrouter_models_url: str = "https://openrouter.ai/api/v1/models"
+
     revalidate_url: str = ""
     cron_secret: str = ""
 

@@ -1,30 +1,36 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import Link from 'next/link'
+import { usePathname } from 'next/navigation'
+import { useTheme } from '@/hooks/useTheme'
+import { BrandLockup } from '@/components/BrandLockup'
 
 interface Props {
-  theme: 'dark' | 'light'
-  onToggleTheme: () => void
+  // Home passes its archive-search state; other pages omit it (no search box).
   query?: string
   onQuery?: (v: string) => void
-  showSearch?: boolean
 }
 
-export function NavBar({ theme, onToggleTheme, query = '', onQuery, showSearch = true }: Props) {
+// Uniform site nav used across home, /models, /models/compare, and the day
+// archive. Owns the theme toggle (via useTheme) and highlights the active
+// section, so it drops into server pages without prop threading. The model
+// detail page keeps its own breadcrumb header by design.
+export function NavBar({ query = '', onQuery }: Props) {
+  const { theme, toggle } = useTheme()
+  const pathname = usePathname() ?? '/'
   const inputRef = useRef<HTMLInputElement>(null)
   const lastY = useRef(0)
   const [navHidden, setNavHidden] = useState(false)
   const [scrolled, setScrolled] = useState(false)
+  const showSearch = !!onQuery
 
   useEffect(() => {
     const onScroll = () => {
       const y = window.scrollY
       setScrolled(y > 40)
-      if (y > lastY.current && y > 80) {
-        setNavHidden(true)
-      } else if (y < lastY.current) {
-        setNavHidden(false)
-      }
+      if (y > lastY.current && y > 80) setNavHidden(true)
+      else if (y < lastY.current) setNavHidden(false)
       lastY.current = y
     }
     window.addEventListener('scroll', onScroll, { passive: true })
@@ -43,17 +49,17 @@ export function NavBar({ theme, onToggleTheme, query = '', onQuery, showSearch =
     return () => window.removeEventListener('keydown', handler)
   }, [showSearch])
 
+  const isModels = pathname.startsWith('/models')
+  const isNews = !isModels
+
   return (
     <div className={`anc-navwrap${navHidden ? ' nav-hidden' : ''}${scrolled ? ' nav-scrolled' : ''}`}>
       <nav className="anc-nav">
-        <a className="anc-brand" href="/">
-          <span className="anc-mark">
-            <span className="anc-mark-dot" />
-          </span>
-          <span className="anc-brand-name">AI News Calendar</span>
-        </a>
+        <Link className="anc-brand" href="/" aria-label="Model Beat — Covering the AI beat, every day.">
+          <BrandLockup sm />
+        </Link>
 
-        {showSearch && onQuery ? (
+        {showSearch ? (
           <div className="anc-search">
             <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
               <circle cx="6" cy="6" r="4.5" stroke="currentColor" strokeWidth="1.4" />
@@ -63,21 +69,25 @@ export function NavBar({ theme, onToggleTheme, query = '', onQuery, showSearch =
               ref={inputRef}
               placeholder="Search the archive…"
               value={query}
-              onChange={(e) => onQuery(e.target.value)}
+              onChange={(e) => onQuery?.(e.target.value)}
             />
             {query && (
-              <button className="anc-search-clear" onClick={() => onQuery('')} title="Clear search">
-                ✕
-              </button>
+              <button className="anc-search-clear" onClick={() => onQuery?.('')} title="Clear search">✕</button>
             )}
           </div>
         ) : (
           <span style={{ flex: 1 }} />
         )}
 
-        <a className="anc-navlink" href="/models">Models</a>
+        <Link className={`anc-navlink${isNews ? ' is-active' : ''}`} href="/">News</Link>
+        <Link className={`anc-navlink${isModels ? ' is-active' : ''}`} href="/models">Models</Link>
 
-        <button className="anc-theme-btn" onClick={onToggleTheme} title={theme === 'dark' ? 'Switch to light' : 'Switch to dark'}>
+        <button
+          className="anc-theme-btn"
+          onClick={toggle}
+          title={theme === 'dark' ? 'Switch to light' : 'Switch to dark'}
+          aria-label="Toggle theme"
+        >
           {theme === 'dark' ? (
             <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
               <circle cx="8" cy="8" r="3.2" stroke="currentColor" strokeWidth="1.4" />

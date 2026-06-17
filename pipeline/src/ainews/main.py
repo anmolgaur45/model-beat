@@ -13,6 +13,12 @@ from .processing.embeddings import embed_pending
 from .processing.scoring import score_pending
 from .processing.clustering import cluster_pending
 from .processing.summarize import summarize_pending
+from .processing.model_registry import (
+    sync_models,
+    sync_benchmarks,
+    sync_pricing,
+    link_model_coverage,
+)
 
 log = structlog.get_logger()
 
@@ -209,6 +215,18 @@ def main() -> None:
         summarized = summarize_pending(conn)
         log.info("pipeline.summarized", count=summarized)
 
+        # Model registry (Phase K) — Epoch AI sync + news linkage. Fault-isolated:
+        # an Epoch outage or schema change must not fail the run.
+        synced = benched = priced = linked = 0
+        try:
+            synced = sync_models(conn)
+            benched = sync_benchmarks(conn)
+            priced = sync_pricing(conn)
+            linked = link_model_coverage(conn)
+        except Exception as exc:
+            log.warning("pipeline.model_registry_failed", error=str(exc))
+        log.info("pipeline.models", synced=synced, benched=benched, priced=priced, linked=linked)
+
         log.info(
             "pipeline.done",
             ingested=len(new_articles),
@@ -216,6 +234,10 @@ def main() -> None:
             scored=scored,
             clustered=clustered,
             summarized=summarized,
+            models_synced=synced,
+            benchmarks=benched,
+            priced=priced,
+            model_links=linked,
         )
         record_run(conn, articles_ingested=len(new_articles), clusters_updated=clustered)
         notify_revalidate()

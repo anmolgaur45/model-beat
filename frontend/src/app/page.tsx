@@ -11,7 +11,6 @@ import { StoryCard } from '@/components/StoryCard'
 import { Recap } from '@/components/Recap'
 import { NavBar } from '@/components/NavBar'
 import { Ticker } from '@/components/Ticker'
-import { useTheme } from '@/hooks/useTheme'
 import { CATEGORY_LABELS } from '@/components/categoryMeta'
 
 function localISO(date: Date = new Date()): string {
@@ -56,7 +55,6 @@ function heroDateLabel(iso: string): { display: string; sub: string } {
 }
 
 export default function HomePage() {
-  const { theme, toggle: toggleTheme } = useTheme()
   const [selectedDate, setSelectedDate] = useState(todayISO)
   const [selectedCategory, setSelectedCategory] = useState<CategoryOption>('all')
   const [search, setSearch] = useState('')
@@ -160,7 +158,7 @@ export default function HomePage() {
       )}
 
       {/* Glass nav */}
-      <NavBar theme={theme} onToggleTheme={toggleTheme} query={search} onQuery={setSearch} />
+      <NavBar query={search} onQuery={setSearch} />
 
       {/* Ticker */}
       {timelineMode && <Ticker stories={topStories ?? []} />}

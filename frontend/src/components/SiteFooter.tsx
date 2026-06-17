@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { unstable_cache } from 'next/cache'
 import sql from '@/lib/db'
+import { BrandLockup } from '@/components/BrandLockup'
 
 const SITE = process.env.NEXT_PUBLIC_URL ?? 'http://localhost:3000'
 
@@ -39,7 +40,9 @@ export async function SiteFooter() {
     <footer className="anc-footer">
       <div className="anc-footer-inner">
         <div className="anc-footer-brand">
-          <Link href="/" className="anc-footer-name">AI News Calendar</Link>
+          <Link href="/" className="anc-footer-name" aria-label="Model Beat — Covering the AI beat, every day.">
+            <BrandLockup tag />
+          </Link>
           <p>The AI news that actually mattered — deduplicated, ranked by significance, every source cited.</p>
         </div>
 
@@ -61,7 +64,7 @@ export async function SiteFooter() {
           </nav>
         )}
       </div>
-      <div className="anc-footer-base">© {new Date().getUTCFullYear()} AI News Calendar</div>
+      <div className="anc-footer-base">© {new Date().getUTCFullYear()} Model Beat</div>
     </footer>
   )
 }

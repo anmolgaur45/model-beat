@@ -1,7 +1,8 @@
 import { z } from 'zod'
 import { router, publicProcedure } from '../trpc'
 import sql from '@/lib/db'
-import type { Article, Cluster } from '@/types/article'
+import type { Article, Cluster, Model, ModelBenchmark } from '@/types/article'
+import { BUCKETS } from '@/lib/modelBuckets'
 
 const CATEGORY_VALUES = [
   'model-releases', 'research-papers', 'company-news', 'product-launches',
@@ -63,6 +64,41 @@ function expandForILIKE(query: string): string[] {
   const synonyms = SEARCH_SYNONYMS[lower]
   if (!synonyms) return [query]
   return [query, ...synonyms]
+}
+
+// Build the ECI lookup + per-bucket percentile-composite scorer from the full
+// set of (model, benchmark, score) rows. Percentile is computed across whatever
+// population is passed in, so callers must pass the *whole* registry's rows for
+// scores to be comparable (a 90% GPQA and a 32% FrontierMath rank on one scale).
+// Shared by getModels (index) and getModelsByIds (compare). All higher-is-better.
+function buildScoreMaps(allBench: { model_id: string; benchmark: string; score: number }[]) {
+  const eciByModel = new Map<string, number>()
+  const byBenchmark = new Map<string, { m: string; s: number }[]>()
+  for (const r of allBench) {
+    if (r.benchmark === 'Epoch Capabilities Index') eciByModel.set(r.model_id, r.score)
+    const arr = byBenchmark.get(r.benchmark) ?? []
+    arr.push({ m: r.model_id, s: r.score })
+    byBenchmark.set(r.benchmark, arr)
+  }
+  const pctByBenchmark = new Map<string, Map<string, number>>()
+  for (const [bench, arr] of byBenchmark) {
+    const n = arr.length
+    const mp = new Map<string, number>()
+    for (const { m, s } of arr) {
+      const below = arr.filter((x) => x.s < s).length
+      mp.set(m, n > 1 ? Math.round((below / (n - 1)) * 100) : 100)
+    }
+    pctByBenchmark.set(bench, mp)
+  }
+  const bucketScore = (modelId: string, benches: string[]): number | null => {
+    const vals: number[] = []
+    for (const b of benches) {
+      const p = pctByBenchmark.get(b)?.get(modelId)
+      if (p != null) vals.push(p)
+    }
+    return vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : null
+  }
+  return { eciByModel, bucketScore }
 }
 
 export const articlesRouter = router({
@@ -378,4 +414,167 @@ export const articlesRouter = router({
     `
     return row?.ran_at ?? null
   }),
+
+  // ── Model registry (Phase K) ──────────────────────────────────────────────
+  // Canonical models released in the last year (Epoch AI–backed), newest first,
+  // each with its headline Epoch Capabilities Index and news-coverage count.
+  getModels: publicProcedure
+    .input(z.object({ limit: z.number().min(1).max(300).default(200) }).optional())
+    .query(async ({ input }) => {
+      const limit = input?.limit ?? 200
+      const models = await sql<Model[]>`
+        SELECT * FROM models
+        WHERE released_at >= now() - interval '1 year'
+        ORDER BY released_at DESC NULLS LAST
+        LIMIT ${limit}
+      `
+      if (models.length === 0) return []
+
+      const ids = models.map((m) => m.id)
+
+      // All benchmark scores → ECI headline + per-bucket percentile composites.
+      const allBench = await sql<{ model_id: string; benchmark: string; score: number }[]>`
+        SELECT model_id, benchmark, score FROM model_benchmarks
+        WHERE model_id = ANY(${ids})
+      `
+      const { eciByModel, bucketScore } = buildScoreMaps(allBench)
+
+      const coverage = await sql<{ model_id: string; n: number }[]>`
+        SELECT model_id, count(*)::int AS n FROM model_clusters
+        WHERE model_id = ANY(${ids}) GROUP BY model_id
+      `
+      const coverageByModel = new Map(coverage.map((r) => [r.model_id, r.n]))
+
+      return models.map((m) => ({
+        ...m,
+        headline_score: eciByModel.get(m.id) ?? null,
+        coverage_count: coverageByModel.get(m.id) ?? 0,
+        buckets: Object.fromEntries(
+          BUCKETS.map((b) => [b.key, bucketScore(m.id, b.benchmarks)]),
+        ),
+      })) as Model[]
+    }),
+
+  // A single model with all its benchmark scores and linked news coverage.
+  getModelBySlug: publicProcedure
+    .input(z.object({ slug: z.string().min(1).max(120).regex(/^[a-z0-9-]+$/) }))
+    .query(async ({ input }) => {
+      const [model] = await sql<Model[]>`SELECT * FROM models WHERE slug = ${input.slug}`
+      if (!model) return null
+
+      const benchmarks = await sql<ModelBenchmark[]>`
+        SELECT benchmark, score, unit FROM model_benchmarks
+        WHERE model_id = ${model.id}
+        ORDER BY (unit = 'index') DESC, benchmark
+      `
+
+      // Percentile rank for each benchmark vs every last-year model, so the page
+      // can show "where this lands among all models" as a uniform bar (Phase O4).
+      if (benchmarks.length > 0) {
+        const names = benchmarks.map((b) => b.benchmark)
+        const pop = await sql<{ benchmark: string; score: number }[]>`
+          SELECT mb.benchmark, mb.score FROM model_benchmarks mb
+          JOIN models m ON m.id = mb.model_id
+          WHERE m.released_at >= now() - interval '1 year' AND mb.benchmark = ANY(${names})
+        `
+        const byBench = new Map<string, number[]>()
+        for (const r of pop) {
+          const arr = byBench.get(r.benchmark) ?? []
+          arr.push(r.score)
+          byBench.set(r.benchmark, arr)
+        }
+        for (const b of benchmarks) {
+          const arr = byBench.get(b.benchmark) ?? []
+          const n = arr.length
+          const below = arr.filter((s) => s < b.score).length
+          b.percentile = n > 1 ? Math.round((below / (n - 1)) * 100) : 100
+        }
+      }
+
+      const clusters = await sql<Cluster[]>`
+        SELECT c.* FROM clusters c
+        JOIN model_clusters mc ON mc.cluster_id = c.id
+        WHERE mc.model_id = ${model.id}
+        ORDER BY c.first_published_at DESC
+        LIMIT 30
+      `
+
+      let withArticles: (Cluster & { articles: Article[] })[] = []
+      if (clusters.length > 0) {
+        const cids = clusters.map((c) => c.id)
+        const articles = await sql<Article[]>`
+          SELECT ${ARTICLE_COLS} FROM articles
+          WHERE cluster_id = ANY(${cids})
+          ORDER BY significance_base DESC
+        `
+        const byCluster = new Map<string, Article[]>()
+        for (const a of articles) {
+          if (!a.cluster_id) continue
+          const arr = byCluster.get(a.cluster_id) ?? []
+          if (arr.length < 3) arr.push(a)
+          byCluster.set(a.cluster_id, arr)
+        }
+        withArticles = clusters.map((c) => ({ ...c, articles: byCluster.get(c.id) ?? [] }))
+      }
+
+      return { ...model, benchmarks, clusters: withArticles }
+    }),
+
+  // Compare view (Phase O3): 2–4 models side by side, each with full benchmark
+  // rows, ECI headline, and per-bucket composites. Bucket percentiles are ranked
+  // against the whole last-year registry (same population as getModels), so the
+  // numbers match what the leaderboard shows. Returned in the requested order.
+  getModelsByIds: publicProcedure
+    .input(
+      z.object({
+        slugs: z.array(z.string().min(1).max(120).regex(/^[a-z0-9-]+$/)).min(1).max(4),
+      }),
+    )
+    .query(async ({ input }) => {
+      const slugs = [...new Set(input.slugs)]
+      const models = await sql<Model[]>`SELECT * FROM models WHERE slug = ANY(${slugs})`
+      if (models.length === 0) return []
+
+      // Population for percentile ranking: the whole last-year registry.
+      const allBench = await sql<{ model_id: string; benchmark: string; score: number }[]>`
+        SELECT mb.model_id, mb.benchmark, mb.score
+        FROM model_benchmarks mb
+        JOIN models m ON m.id = mb.model_id
+        WHERE m.released_at >= now() - interval '1 year'
+      `
+      const { eciByModel, bucketScore } = buildScoreMaps(allBench)
+
+      const ids = models.map((m) => m.id)
+      const benchRows = await sql<(ModelBenchmark & { model_id: string })[]>`
+        SELECT model_id, benchmark, score, unit FROM model_benchmarks
+        WHERE model_id = ANY(${ids})
+        ORDER BY (unit = 'index') DESC, benchmark
+      `
+      const benchByModel = new Map<string, ModelBenchmark[]>()
+      for (const r of benchRows) {
+        const arr = benchByModel.get(r.model_id) ?? []
+        arr.push({ benchmark: r.benchmark, score: r.score, unit: r.unit })
+        benchByModel.set(r.model_id, arr)
+      }
+
+      const coverage = await sql<{ model_id: string; n: number }[]>`
+        SELECT model_id, count(*)::int AS n FROM model_clusters
+        WHERE model_id = ANY(${ids}) GROUP BY model_id
+      `
+      const coverageByModel = new Map(coverage.map((r) => [r.model_id, r.n]))
+
+      const enriched = models.map((m) => ({
+        ...m,
+        benchmarks: benchByModel.get(m.id) ?? [],
+        headline_score: eciByModel.get(m.id) ?? null,
+        coverage_count: coverageByModel.get(m.id) ?? 0,
+        buckets: Object.fromEntries(
+          BUCKETS.map((b) => [b.key, bucketScore(m.id, b.benchmarks)]),
+        ),
+      })) as Model[]
+
+      // Preserve the requested order (deduped).
+      const bySlug = new Map(enriched.map((m) => [m.slug, m]))
+      return slugs.map((s) => bySlug.get(s)).filter(Boolean) as Model[]
+    }),
 })

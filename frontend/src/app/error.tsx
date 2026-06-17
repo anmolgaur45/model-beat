@@ -1,5 +1,8 @@
 'use client'
 
+import Link from 'next/link'
+import { BrandLockup } from '@/components/BrandLockup'
+
 export default function Error({
   error,
   reset,
@@ -8,7 +11,8 @@ export default function Error({
   reset: () => void
 }) {
   return (
-    <div className="aurora-stage" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', padding: '24px' }}>
+    <div className="aurora-stage" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 32, minHeight: '100vh', padding: '24px' }}>
+      <Link href="/" aria-label="Model Beat — Covering the AI beat, every day."><BrandLockup /></Link>
       <div className="anc-statebox error" style={{ maxWidth: 440 }}>
         <div className="anc-statebox-glyph">
           <svg width="22" height="22" viewBox="0 0 22 22" fill="none">

@@ -23,9 +23,23 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.7,
   }))
 
+  // Per-model pages (Phase K) — one URL per canonical model in the registry.
+  const modelRows = await sql<{ slug: string; updated_at: string }[]>`
+    SELECT slug, updated_at FROM models
+    WHERE released_at >= now() - interval '1 year'
+    ORDER BY released_at DESC NULLS LAST
+  `
+  const modelPages: MetadataRoute.Sitemap = modelRows.map((m) => ({
+    url: `${SITE}/models/${m.slug}`,
+    lastModified: new Date(m.updated_at),
+    changeFrequency: 'weekly',
+    priority: 0.6,
+  }))
+
   return [
     { url: SITE, lastModified: new Date(), changeFrequency: 'hourly', priority: 1 },
     { url: `${SITE}/models`, lastModified: new Date(), changeFrequency: 'daily', priority: 0.8 },
+    ...modelPages,
     ...days,
   ]
 }

@@ -120,3 +120,50 @@ AS $$
   ORDER BY a.embedding <=> query_embedding
   LIMIT 10;
 $$;
+
+-- Phase K: model registry (Epoch AI–backed, CC BY). Canonical models released
+-- in the last year with their benchmark scores; existing news clusters link in
+-- as "in the news" coverage. Populated by the pipeline's model_registry step.
+CREATE TABLE IF NOT EXISTS models (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  slug            TEXT UNIQUE NOT NULL,
+  epoch_key       TEXT UNIQUE,
+  name            TEXT NOT NULL,
+  vendor          TEXT,
+  family          TEXT,
+  released_at     TIMESTAMPTZ,
+  parameters      TEXT,
+  accessibility   TEXT,
+  is_open_weight  BOOLEAN,
+  description     TEXT,
+  primary_url     TEXT,
+  significance    FLOAT DEFAULT 0,
+  first_seen_at   TIMESTAMPTZ DEFAULT NOW(),
+  updated_at      TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS model_benchmarks (
+  model_id    UUID REFERENCES models(id) ON DELETE CASCADE,
+  benchmark   TEXT NOT NULL,
+  score       FLOAT,
+  unit        TEXT,
+  PRIMARY KEY (model_id, benchmark)
+);
+
+CREATE TABLE IF NOT EXISTS model_clusters (
+  model_id    UUID REFERENCES models(id) ON DELETE CASCADE,
+  cluster_id  UUID REFERENCES clusters(id) ON DELETE CASCADE,
+  PRIMARY KEY (model_id, cluster_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_models_released         ON models (released_at DESC);
+CREATE INDEX IF NOT EXISTS idx_model_benchmarks_model  ON model_benchmarks (model_id);
+CREATE INDEX IF NOT EXISTS idx_model_clusters_model    ON model_clusters (model_id);
+
+-- Phase O1: pricing & specs from OpenRouter's public model catalog (nullable).
+ALTER TABLE models ADD COLUMN IF NOT EXISTS openrouter_id     TEXT;
+ALTER TABLE models ADD COLUMN IF NOT EXISTS price_in          FLOAT;  -- USD per 1M input tokens
+ALTER TABLE models ADD COLUMN IF NOT EXISTS price_out         FLOAT;  -- USD per 1M output tokens
+ALTER TABLE models ADD COLUMN IF NOT EXISTS context_window    INT;
+ALTER TABLE models ADD COLUMN IF NOT EXISTS input_modalities  TEXT;
+ALTER TABLE models ADD COLUMN IF NOT EXISTS output_modalities TEXT;

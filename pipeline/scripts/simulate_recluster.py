@@ -20,6 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from ainews.db import get_connection  # noqa: E402
 from ainews.processing.clustering import (  # noqa: E402
     _coverage_multiplier,
+    _weighted_base,
     effective_threshold,
     normalize_score,
 )
@@ -154,7 +155,8 @@ def main(news_t: float | None = None):
             if arts[k]["impact"] is not None:
                 impacts.append(float(arts[k]["impact"]))
         max_impact = max(impacts) if impacts else 5.0
-        raw = sum(org_base.values()) * (max_impact / 5.0) * _coverage_multiplier(len(org_base))
+        authorities = list(org_base.values())
+        raw = _weighted_base(authorities) * (max_impact / 5.0) * _coverage_multiplier(authorities)
         s = normalize_score(raw)
         hist[int(s)] += 1
         if s >= 8.5:

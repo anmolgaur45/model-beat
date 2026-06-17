@@ -3,6 +3,8 @@ from datetime import datetime, timezone
 import numpy as np
 
 from ainews.processing.clustering import (
+    _coverage_multiplier,
+    _weighted_base,
     compute_merge_groups,
     effective_threshold,
     normalize_score,
@@ -44,6 +46,36 @@ def test_normalize_score_bounds():
 def test_normalize_score_monotonic():
     values = [normalize_score(r) for r in (1, 3, 6, 10, 18, 30, 50, 90, 200)]
     assert values == sorted(values)
+
+
+# ── source-quality-weighted scoring ─────────────────────────────────────────
+
+def test_weighted_base_diminishing_returns():
+    # a pile of authority-3 affiliates converges instead of summing linearly
+    base = _weighted_base([3.0] * 16)
+    assert base < 8.0  # would be 48 under the old linear sum
+    # one Bloomberg-7 plus a few mid-tier outlets beats 16 weak ones
+    assert _weighted_base([7.0, 7.0, 5.0, 5.0, 3.0, 3.0, 3.0, 3.0]) > base
+
+
+def test_coverage_multiplier_authority_weighted():
+    # 16 authority-3 orgs count as far fewer effective corroborators
+    assert _coverage_multiplier([3.0] * 16) < 1.0 + 0.25 * 15  # below old linear growth
+    # at equal breadth, higher-authority sources lift the multiplier more
+    assert _coverage_multiplier([7.0] * 4) > _coverage_multiplier([3.0] * 4)
+    # a single org gives no coverage boost
+    assert _coverage_multiplier([7.0]) == 1.0
+
+
+def test_syndication_does_not_outrank_authoritative_coverage():
+    """17 local-TV affiliates must not outrank Bloomberg-led coverage of a deal."""
+    def raw(authorities, max_impact):
+        return _weighted_base(authorities) * (max_impact / 5.0) * _coverage_multiplier(authorities)
+
+    syndicated = raw([3.0] * 17, max_impact=5.0)          # wire story on 17 local stations
+    authoritative = raw([7.0, 7.0, 5.0, 5.0, 3.0, 3.0, 3.0, 3.0], max_impact=6.0)  # Bloomberg-led deal
+    assert authoritative > syndicated
+    assert normalize_score(authoritative) > normalize_score(syndicated)
 
 
 # ── effective_threshold ─────────────────────────────────────────────────────

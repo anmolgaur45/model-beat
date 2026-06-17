@@ -13,8 +13,37 @@ from ..sources import get_organization
 log = structlog.get_logger()
 
 
-def _coverage_multiplier(distinct_orgs: int) -> float:
-    return 1.0 + 0.25 * (distinct_orgs - 1)
+# Source-quality-weighted scoring. Authorities are the per-org significance_base
+# values (≈3 local/aggregator, 5 mid-tier outlet, 7 wire/Bloomberg, 9 top lab).
+# Without weighting, a wire story syndicated by ~17 authority-3 local-TV
+# affiliates out-scored Bloomberg-led coverage of a major deal: the linear
+# base-sum and linear distinct-org count both reward breadth-of-outlets, which
+# low-authority syndication games. These two helpers fix that.
+_AUTH_CAP = 7.0       # an org at/above this counts as one full corroborator
+_BASE_DECAY = 0.6     # diminishing returns on each additional corroborating org
+_COVERAGE_STEP = 0.25 # coverage-multiplier growth per effective extra org
+
+
+def _weighted_base(authorities: list[float]) -> float:
+    """Authoritative depth with diminishing returns.
+
+    Sort authorities high→low and decay each additional org's contribution, so
+    the best sources dominate and a long tail of weak outlets adds little. A
+    pile of authority-3 affiliates converges to ~7.5 instead of summing to ~48.
+    """
+    auths = sorted(authorities, reverse=True)
+    return sum(a * (_BASE_DECAY ** i) for i, a in enumerate(auths))
+
+
+def _coverage_multiplier(authorities: list[float]) -> float:
+    """Corroboration breadth, weighted by source quality.
+
+    Each org contributes proportional to its authority (capped at _AUTH_CAP), so
+    16 local stations count as far fewer 'effective' corroborators than 16
+    independent high-authority newsrooms would.
+    """
+    effective = sum(min(1.0, a / _AUTH_CAP) for a in authorities)
+    return 1.0 + _COVERAGE_STEP * max(0.0, effective - 1.0)
 
 
 def normalize_score(raw: float) -> float:
@@ -77,9 +106,9 @@ def compute_cluster_score(conn: psycopg.Connection, cluster_id: str) -> float:
     # Default to neutral 5 only when no articles have been scored yet
     max_impact = max(impact_scores) if impact_scores else 5.0
 
-    base_score = sum(org_base.values())
-    distinct_orgs = len(org_base)
-    raw = base_score * (max_impact / 5.0) * _coverage_multiplier(distinct_orgs)
+    authorities = list(org_base.values())
+    base_score = _weighted_base(authorities)
+    raw = base_score * (max_impact / 5.0) * _coverage_multiplier(authorities)
 
     return normalize_score(raw)
 

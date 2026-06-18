@@ -902,6 +902,7 @@ a { cursor: pointer; text-decoration: none; color: inherit; }
 .ch-lab-hit { fill: transparent; cursor: pointer; }
 .ch-lab.on { fill: var(--text); }
 .ch-vline { stroke: var(--line2); stroke-width: 1; stroke-dasharray: 3 4; }
+.ch-ref { stroke: var(--text3); stroke-width: 1.25; stroke-dasharray: 6 5; opacity: 0.55; }
 
 .ch-tip {
   position: fixed; z-index: 200; width: 230px; padding: 13px 15px; border-radius: 13px;
@@ -920,9 +921,31 @@ a { cursor: pointer; text-decoration: none; color: inherit; }
 
 .ch-footnote { margin-top: 6px; color: var(--text3); font-size: 12px; line-height: 1.6; }
 
+/* ranked horizontal bars */
+.ch-bars { display: flex; flex-direction: column; gap: 9px; margin-top: 12px; }
+.ch-bar-row { display: flex; align-items: center; gap: 12px; }
+.ch-bar-name { width: 132px; flex: none; font-size: 13px; color: var(--text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: right; }
+.ch-bar-track { flex: 1; height: 14px; background: var(--line); border-radius: 5px; overflow: hidden; }
+.ch-bar-fill { display: block; height: 100%; border-radius: 5px; min-width: 2px; }
+.ch-bar-val { width: 56px; flex: none; font-family: var(--font-mono); font-size: 12.5px; font-weight: 600; color: var(--text); text-align: right; }
+.ch-bar-row:hover .ch-bar-name { color: var(--text); }
+.ch-bar-row:hover .ch-bar-fill { filter: brightness(1.12); }
+
+/* monthly count columns */
+.ch-cols { display: flex; align-items: flex-end; gap: 6px; height: 200px; margin-top: 14px; }
+.ch-col { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; }
+.ch-col-n { font-family: var(--font-mono); font-size: 11px; color: var(--text3); margin-bottom: 5px; }
+.ch-col-bar { width: 64%; max-width: 30px; min-height: 2px; border-radius: 4px 4px 0 0; background: linear-gradient(180deg, var(--accent), color-mix(in oklch, var(--accent) 45%, transparent)); }
+.ch-col:hover .ch-col-bar { filter: brightness(1.15); }
+.ch-cols-x { display: flex; gap: 6px; margin-top: 8px; }
+.ch-cols-x span { flex: 1; min-width: 0; text-align: center; font-family: var(--font-mono); font-size: 10px; color: var(--text3); white-space: nowrap; overflow: hidden; }
+
 @media (max-width: 720px) {
   .ch-legend { display: none; }
   .ch-head { flex-wrap: wrap; }
+  .ch-bar-name { width: 92px; font-size: 12px; }
+  .ch-bar-val { width: 46px; }
+  .ch-cols-x span { font-size: 8.5px; }
 }
 
 /* ── Per-model page (Aurora "Telemetry" — design handoff) ──────────────── */

@@ -10,10 +10,15 @@ const securityHeaders = [
   { key: 'X-DNS-Prefetch-Control', value: 'on' },
   { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
   { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=(), payment=(), usb=(), bluetooth=(), accelerometer=(), gyroscope=()' },
-  {
-    key: 'Strict-Transport-Security',
-    value: 'max-age=63072000; includeSubDomains; preload',
-  },
+  // HSTS only in production (the site is HTTPS there). Never in dev: sending it
+  // over plain-HTTP LAN/localhost poisons the browser into force-upgrading every
+  // request to HTTPS, which breaks JS/XHR loading on phones testing over the LAN.
+  ...(isDev
+    ? []
+    : [{
+        key: 'Strict-Transport-Security',
+        value: 'max-age=63072000; includeSubDomains; preload',
+      }]),
   {
     key: 'Content-Security-Policy',
     value: [
@@ -32,6 +37,12 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   productionBrowserSourceMaps: false,
+  // Allow the dev server's client runtime (HMR, React Refresh) to load when the
+  // app is opened from a phone on the LAN. Without this, Next.js blocks those
+  // dev resources cross-origin and the page renders but never hydrates — no data
+  // fetches, dead buttons. Dev-only; ignored in production. Update the IP if your
+  // LAN address changes (see the "Network:" URL printed by `pnpm dev`).
+  allowedDevOrigins: ['192.168.0.103'],
   async headers() {
     return [
       {

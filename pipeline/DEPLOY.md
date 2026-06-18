@@ -13,7 +13,7 @@ service-account key stored in GitHub). The setup below is a one-time task.
 ```
 PROJECT_ID=ai-news-calendar-493510
 REGION=asia-south1
-REPO=anmolgaur45/ai-news-calendar
+REPO=anmolgaur45/model-beat
 POOL=github-pool
 PROVIDER=github-provider
 DEPLOYER=gh-deployer@ai-news-calendar-493510.iam.gserviceaccount.com
@@ -25,7 +25,7 @@ RUNTIME_SA=ainews-pipeline@ai-news-calendar-493510.iam.gserviceaccount.com
 ```bash
 PROJECT_ID=ai-news-calendar-493510
 REGION=asia-south1
-REPO=anmolgaur45/ai-news-calendar
+REPO=anmolgaur45/model-beat
 POOL=github-pool
 PROVIDER=github-provider
 PROJECT_NUMBER=$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')

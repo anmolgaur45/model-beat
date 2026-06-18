@@ -210,8 +210,8 @@ export function ModelsLeaderboard({
                 </span>
                 <span className="anc-mvendor">{m.vendor ?? '—'}</span>
                 <span className="anc-mctx">{fmtCtxShort(m.context_window)}</span>
-                <span className="anc-mprice">{fmtPrice(m)}</span>
-                <span className="anc-mscore2">
+                <span className="anc-mprice" data-label="$/M">{fmtPrice(m)}</span>
+                <span className="anc-mscore2" data-label={scoreColLabel}>
                   {sc == null ? (
                     '—'
                   ) : isEciTab ? (

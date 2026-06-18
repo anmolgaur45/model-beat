@@ -158,7 +158,16 @@ export default function HomePage() {
       )}
 
       {/* Glass nav */}
-      <NavBar query={search} onQuery={setSearch} />
+      <NavBar
+        query={search}
+        onQuery={setSearch}
+        onHome={() => {
+          setSearch('')
+          setRecapMode(false)
+          setSelectedCategory('all')
+          setSelectedDate(todayISO())
+        }}
+      />
 
       {/* Ticker */}
       {timelineMode && <Ticker stories={topStories ?? []} />}

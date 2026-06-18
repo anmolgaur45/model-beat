@@ -184,7 +184,11 @@ a { cursor: pointer; text-decoration: none; color: inherit; }
   justify-content: center;
   padding: 14px 20px 10px;
   transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+  /* The wrapper spans full width with transparent padding; let taps fall
+     through to the content below it — only the pill itself is interactive. */
+  pointer-events: none;
 }
+.anc-nav { pointer-events: auto; }
 .anc-navwrap.nav-hidden {
   transform: translateY(-110%);
   pointer-events: none;
@@ -341,6 +345,39 @@ a { cursor: pointer; text-decoration: none; color: inherit; }
 @media (max-width: 960px) {
   .anc-search-kbd { display: none; }
   .anc-nav { gap: 10px; }
+}
+/* Right-side cluster (News + Models + theme) — kept together so the theme
+   toggle never gets pushed out of the pill. The spacer fills the middle on
+   pages without a search box. */
+.anc-navspacer { flex: 1; }
+.anc-navactions { display: flex; align-items: center; gap: 16px; flex: none; }
+
+/* Phones: the pill wraps to two rows — brand + the action cluster on top, the
+   search field full-width below. The brand (not the cluster) gives way first. */
+@media (max-width: 640px) {
+  .anc-navwrap { padding: 10px 8px 8px; }
+  .anc-nav {
+    flex-wrap: wrap;
+    height: auto;
+    row-gap: 9px;
+    column-gap: 8px;
+    padding: 9px 10px;
+    border-radius: 20px;
+  }
+  .anc-brand { flex: 1 1 auto; min-width: 0; overflow: hidden; }
+  .anc-navactions { gap: 10px; }
+  .anc-navlink { padding: 6px 6px; }
+  .anc-search {
+    order: 10;
+    flex: 1 1 100%;
+    width: 100%;
+    max-width: none;
+    height: 40px;
+  }
+}
+/* Tiny screens: drop the wordmark, keep the equalizer mark, so nothing clips. */
+@media (max-width: 360px) {
+  .anc-brand .lb-name { display: none; }
 }
 
 /* theme toggle */
@@ -661,14 +698,44 @@ a { cursor: pointer; text-decoration: none; color: inherit; }
 .anc-cmpbar-go.is-disabled { background: var(--line2); color: var(--text3); cursor: not-allowed; }
 
 @media (max-width: 680px) {
-  .anc-lbtable .anc-mrow { grid-template-columns: 1fr auto; gap: 4px 10px; }
+  /* Reflow each row into a tidy 2×2 card: name + score on top, vendor + price
+     below. Headers are dropped, so values stay self-evident and aligned. */
   .anc-lbtable .anc-mhead { display: none; }
-  .anc-lbtable .anc-lbcb { display: none; }
-  .anc-lbrow .anc-mtitle { order: 1; }
-  .anc-lbrow .anc-mscore2 { order: 2; }
-  .anc-lbrow .anc-mvendor { order: 3; grid-column: 1; font-size: 12px; }
-  .anc-lbrow .anc-mprice { order: 4; text-align: right; }
+  .anc-lbtable .anc-mrow {
+    grid-template-columns: 1fr auto;
+    column-gap: 12px;
+    row-gap: 3px;
+    align-items: start;
+    padding: 14px 2px;
+  }
+  .anc-lbrow .anc-mtitle { grid-column: 1; grid-row: 1; }
+  .anc-lbrow .anc-mscore2 { grid-column: 2; grid-row: 1; justify-content: flex-end; align-self: center; }
+  .anc-lbrow .anc-mvendor { grid-column: 1; grid-row: 2; font-size: 12px; }
+  .anc-lbrow .anc-mprice { grid-column: 2; grid-row: 2; text-align: right; align-self: center; }
   .anc-lbrow .anc-mctx { display: none; }
+  /* Headers are hidden on mobile, so label the bare numbers inline (e.g. the
+     active metric like "ECI" before the score, "$/M" before the price). */
+  .anc-lbrow .anc-mscore2::before,
+  .anc-lbrow .anc-mprice::before {
+    content: attr(data-label);
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    font-weight: 400;
+    color: var(--text3);
+    margin-right: 7px;
+  }
+
+  /* Compare mode: a leading checkbox column spanning both rows so models are
+     actually selectable on touch (it was hidden before). */
+  .anc-lbtable.is-compare .anc-mrow { grid-template-columns: 30px 1fr auto; }
+  .anc-lbtable.is-compare .anc-lbcb { display: flex; grid-column: 1; grid-row: 1 / span 2; align-self: center; }
+  .anc-lbtable.is-compare .anc-lbcb input { width: 18px; height: 18px; }
+  .anc-lbtable.is-compare .anc-mtitle,
+  .anc-lbtable.is-compare .anc-mvendor { grid-column: 2; }
+  .anc-lbtable.is-compare .anc-mscore2,
+  .anc-lbtable.is-compare .anc-mprice { grid-column: 3; }
 }
 
 /* Compare view (Phase O3) */
@@ -1007,13 +1074,23 @@ a { cursor: pointer; text-decoration: none; color: inherit; }
 
 @media (max-width: 880px) {
   .m2-titlerow { flex-direction: column; gap: 14px; }
-  .m2-actions { width: 100%; }
-  .m2-actions .m2-btn { flex: 1; justify-content: center; }
+  .m2-actions { width: 100%; flex-wrap: wrap; }
+  .m2-actions .m2-btn { flex: 1 1 140px; justify-content: center; min-width: 0; }
   .m2-ribbon { flex-wrap: wrap; }
   .m2-spec { flex: 1 1 40%; border-bottom: 1px solid var(--line); }
   .m2-gauges { grid-template-columns: 1fr; }
   .m2-grid { grid-template-columns: 1fr; }
   .m2-crumb { display: none; }
+}
+/* Phones: tighten the shell padding and stack the hero action buttons so the
+   "Announcement" button can't spill past the card edge. */
+@media (max-width: 520px) {
+  .m2-header { padding: 0 16px; gap: 12px; }
+  .m2-wrap { padding: 26px 16px 60px; }
+  .m2-hero { padding: 20px 18px; gap: 14px; }
+  .m2-avatar.lg { width: 42px; height: 42px; font-size: 19px; margin-top: 2px; }
+  .m2-actions { flex-direction: column; }
+  .m2-actions .m2-btn { width: 100%; flex: none; }
 }
 
 .anc-bench-empty { font-size: 13.5px; color: var(--text3); line-height: 1.55; max-width: 560px; margin: 0; }

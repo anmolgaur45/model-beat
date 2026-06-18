@@ -10,13 +10,16 @@ interface Props {
   // Home passes its archive-search state; other pages omit it (no search box).
   query?: string
   onQuery?: (v: string) => void
+  // Home passes this so clicking the brand while already on "/" resets the view
+  // (exits recap/search) instead of being a no-op same-route navigation.
+  onHome?: () => void
 }
 
 // Uniform site nav used across home, /models, /models/compare, and the day
 // archive. Owns the theme toggle (via useTheme) and highlights the active
 // section, so it drops into server pages without prop threading. The model
 // detail page keeps its own breadcrumb header by design.
-export function NavBar({ query = '', onQuery }: Props) {
+export function NavBar({ query = '', onQuery, onHome }: Props) {
   const { theme, toggle } = useTheme()
   const pathname = usePathname() ?? '/'
   const inputRef = useRef<HTMLInputElement>(null)
@@ -55,7 +58,18 @@ export function NavBar({ query = '', onQuery }: Props) {
   return (
     <div className={`anc-navwrap${navHidden ? ' nav-hidden' : ''}${scrolled ? ' nav-scrolled' : ''}`}>
       <nav className="anc-nav">
-        <Link className="anc-brand" href="/" aria-label="Model Beat — Covering the AI beat, every day.">
+        <Link
+          className="anc-brand"
+          href="/"
+          aria-label="Model Beat — Covering the AI beat, every day."
+          onClick={() => {
+            // Same-route Link clicks are no-ops, so reset the home view directly.
+            if (pathname === '/' && onHome) {
+              onHome()
+              window.scrollTo({ top: 0 })
+            }
+          }}
+        >
           <BrandLockup sm />
         </Link>
 
@@ -76,29 +90,33 @@ export function NavBar({ query = '', onQuery }: Props) {
             )}
           </div>
         ) : (
-          <span style={{ flex: 1 }} />
+          <span className="anc-navspacer" />
         )}
 
-        <Link className={`anc-navlink${isNews ? ' is-active' : ''}`} href="/">News</Link>
-        <Link className={`anc-navlink${isModels ? ' is-active' : ''}`} href="/models">Models</Link>
+        {/* Right cluster stays together as one non-shrinking group so the theme
+            toggle is never pushed out of the pill; the brand truncates first. */}
+        <div className="anc-navactions">
+          <Link className={`anc-navlink${isNews ? ' is-active' : ''}`} href="/">News</Link>
+          <Link className={`anc-navlink${isModels ? ' is-active' : ''}`} href="/models">Models</Link>
 
-        <button
-          className="anc-theme-btn"
-          onClick={toggle}
-          title={theme === 'dark' ? 'Switch to light' : 'Switch to dark'}
-          aria-label="Toggle theme"
-        >
-          {theme === 'dark' ? (
-            <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
-              <circle cx="8" cy="8" r="3.2" stroke="currentColor" strokeWidth="1.4" />
-              <path d="M8 1.5v1.8M8 12.7v1.8M1.5 8h1.8M12.7 8h1.8M3.4 3.4l1.3 1.3M11.3 11.3l1.3 1.3M12.6 3.4l-1.3 1.3M4.7 11.3l-1.3 1.3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-            </svg>
-          ) : (
-            <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
-              <path d="M13.5 9.5A5.5 5.5 0 1 1 6.5 2.5a4.5 4.5 0 0 0 7 7z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
-            </svg>
-          )}
-        </button>
+          <button
+            className="anc-theme-btn"
+            onClick={toggle}
+            title={theme === 'dark' ? 'Switch to light' : 'Switch to dark'}
+            aria-label="Toggle theme"
+          >
+            {theme === 'dark' ? (
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+                <circle cx="8" cy="8" r="3.2" stroke="currentColor" strokeWidth="1.4" />
+                <path d="M8 1.5v1.8M8 12.7v1.8M1.5 8h1.8M12.7 8h1.8M3.4 3.4l1.3 1.3M11.3 11.3l1.3 1.3M12.6 3.4l-1.3 1.3M4.7 11.3l-1.3 1.3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+              </svg>
+            ) : (
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+                <path d="M13.5 9.5A5.5 5.5 0 1 1 6.5 2.5a4.5 4.5 0 0 0 7 7z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+              </svg>
+            )}
+          </button>
+        </div>
       </nav>
     </div>
   )

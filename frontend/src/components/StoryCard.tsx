@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { AnimatePresence, motion } from 'framer-motion'
 import type { Article, Cluster, Category } from '@/types/article'
 import { ScoreBadge, type ScoreStyle } from './ScoreBadge'
@@ -43,7 +44,7 @@ export function StoryCard({ cluster, showDate = false, scoreStyle = 'orb', highl
         <ScoreBadge score={score} style={scoreStyle} />
 
         <span className="anc-cmain">
-          <h4>{highlightText(cluster.headline, highlight ?? '')}</h4>
+          <h3>{highlightText(cluster.headline, highlight ?? '')}</h3>
           <span className="anc-cmeta">
             <span className="cat">{label}</span>
             <span>·</span>
@@ -67,6 +68,15 @@ export function StoryCard({ cluster, showDate = false, scoreStyle = 'orb', highl
           <path d="M3 5l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       </button>
+
+      {cluster.models && cluster.models.length > 0 && (
+        <div className="anc-cmodels">
+          <span className="anc-cmodels-label">Models</span>
+          {cluster.models.map((m) => (
+            <Link key={m.slug} href={`/models/${m.slug}`} className="anc-cmodel">{m.name}</Link>
+          ))}
+        </div>
+      )}
 
       <AnimatePresence>
         {isOpen && (

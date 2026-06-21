@@ -30,7 +30,7 @@ export const metadata: Metadata = {
     template: '%s | Model Beat',
   },
   description:
-    'The AI news that actually mattered, organized by day — deduplicated across sources, ranked by significance, every story cited. Track model releases, research, and company news from the top AI labs.',
+    'AI news that actually mattered, organized by day — deduplicated across sources and ranked by significance, plus a model tracker for benchmarks and pricing.',
   keywords: ['AI news', 'artificial intelligence', 'machine learning', 'GPT', 'Claude', 'Gemini', 'LLM'],
   alternates: {
     canonical: '/',

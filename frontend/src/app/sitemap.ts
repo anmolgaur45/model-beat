@@ -6,13 +6,15 @@ import { SITE_URL as SITE } from '@/lib/site'
 export const revalidate = 3600
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  // UTC-day grouping to match getClusters' day boundaries (it filters on UTC midnight).
+  // Substantive, recent days only (>=3 stories within ~1y) — matches the day
+  // pages' index gate, so the sitemap never lists noindexed thin/backdated days.
   const rows = await sql<{ day: string; last: string }[]>`
     SELECT to_char(first_published_at AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS day,
            max(created_at) AS last
     FROM clusters
-    WHERE first_published_at >= now() - interval '90 days'
+    WHERE first_published_at >= now() - interval '370 days'
     GROUP BY day
+    HAVING count(*) >= 3
     ORDER BY day DESC
   `
 

@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import type { Article, Cluster, Category } from '@/types/article'
 import { ScoreOrbLarge } from './ScoreBadge'
 import { SourceBubble } from './SourceBubble'
@@ -52,6 +53,14 @@ export function FeatureCard({ cluster }: Props) {
             </a>
           )}
         </div>
+        {cluster.models && cluster.models.length > 0 && (
+          <div className="anc-cmodels">
+            <span className="anc-cmodels-label">Models</span>
+            {cluster.models.map((m) => (
+              <Link key={m.slug} href={`/models/${m.slug}`} className="anc-cmodel">{m.name}</Link>
+            ))}
+          </div>
+        )}
       </div>
     </article>
   )

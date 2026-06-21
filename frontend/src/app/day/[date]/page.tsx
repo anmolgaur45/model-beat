@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { appRouter } from '@/server/routers/_app'
 import { createContext } from '@/server/trpc'
+import sql from '@/lib/db'
 import { FeatureCard } from '@/components/FeatureCard'
 import { StoryCard } from '@/components/StoryCard'
 import { NavBar } from '@/components/NavBar'
@@ -48,6 +49,39 @@ function bestText(c: DayCluster): string {
   return c.summary ?? c.articles[0]?.body_excerpt ?? ''
 }
 
+function navLabel(day: string): string {
+  return new Date(day + 'T12:00:00Z').toLocaleDateString('en-US', {
+    weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC',
+  })
+}
+
+// A day is worth indexing only if it's a substantive, recent news day. Thin or
+// backdated days (arXiv carries original publication dates back to 2015) are
+// noindexed so a long tail of one-story pages doesn't dilute the site. The
+// archive, sitemap and prev/next chain use the same bar.
+const DAY_INDEX_MIN_STORIES = 3
+function isIndexableDay(date: string, storyCount: number): boolean {
+  if (storyCount < DAY_INDEX_MIN_STORIES) return false
+  const ageDays = (Date.now() - new Date(date + 'T00:00:00Z').getTime()) / 86_400_000
+  return ageDays <= 370
+}
+
+// Nearest substantive days on either side — the crawlable archive chain.
+const adjacentDays = cache(async (date: string) => {
+  const [row] = await sql<{ prev: string | null; next: string | null }[]>`
+    WITH substantive AS (
+      SELECT to_char(first_published_at AT TIME ZONE 'UTC','YYYY-MM-DD') AS d
+      FROM clusters
+      WHERE first_published_at >= now() - interval '370 days'
+      GROUP BY 1 HAVING count(*) >= ${DAY_INDEX_MIN_STORIES}
+    )
+    SELECT
+      (SELECT max(d) FROM substantive WHERE d < ${date}) AS prev,
+      (SELECT min(d) FROM substantive WHERE d > ${date}) AS next
+  `
+  return row ?? { prev: null, next: null }
+})
+
 export async function generateMetadata({
   params,
 }: {
@@ -67,6 +101,7 @@ export async function generateMetadata({
     title: `AI news on ${label}`,
     description,
     alternates: { canonical: url },
+    robots: isIndexableDay(date, clusters.length) ? undefined : { index: false, follow: true },
     openGraph: {
       type: 'article',
       title: `AI news on ${label}`,
@@ -93,6 +128,8 @@ export default async function DayPage({
 
   const clusters = await loadDay(date)
   if (clusters.length === 0) notFound()
+
+  const { prev, next } = await adjacentDays(date)
 
   const label = longDate(date)
   const d = new Date(date + 'T12:00:00Z')
@@ -167,6 +204,21 @@ export default async function DayPage({
             <StoryCard key={c.id} cluster={c} />
           ))}
         </div>
+
+        {(prev || next) && (
+          <nav className="anc-day-nav" aria-label="Browse adjacent days">
+            {prev ? (
+              <Link className="anc-day-navlink" href={`/day/${prev}`} rel="prev">← {navLabel(prev)}</Link>
+            ) : (
+              <span className="anc-day-navlink is-disabled">← Older</span>
+            )}
+            {next ? (
+              <Link className="anc-day-navlink" href={`/day/${next}`} rel="next">{navLabel(next)} →</Link>
+            ) : (
+              <span className="anc-day-navlink is-disabled">Newer →</span>
+            )}
+          </nav>
+        )}
       </main>
     </div>
   )

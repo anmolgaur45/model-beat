@@ -253,8 +253,28 @@ export const articlesRouter = router({
         articlesByCluster.set(article.cluster_id, arr)
       }
 
+      // Models this story is about (SEO cross-linking) — links a release story
+      // to its /models/[slug] page. Most clusters have none; cap at 3.
+      const modelLinks = await sql<{ cluster_id: string; slug: string; name: string }[]>`
+        SELECT mc.cluster_id, m.slug, m.name
+        FROM model_clusters mc
+        JOIN models m ON m.id = mc.model_id
+        WHERE mc.cluster_id = ANY(${clusterIds})
+        ORDER BY m.released_at DESC NULLS LAST
+      `
+      const modelsByCluster = new Map<string, { slug: string; name: string }[]>()
+      for (const r of modelLinks) {
+        const arr = modelsByCluster.get(r.cluster_id) ?? []
+        if (arr.length < 3) arr.push({ slug: r.slug, name: r.name })
+        modelsByCluster.set(r.cluster_id, arr)
+      }
+
       return clusters
-        .map((c) => ({ ...c, articles: articlesByCluster.get(c.id) ?? [] }))
+        .map((c) => ({
+          ...c,
+          articles: articlesByCluster.get(c.id) ?? [],
+          models: modelsByCluster.get(c.id) ?? [],
+        }))
         .filter((c) => c.articles.length > 0) as (Cluster & { articles: Article[] })[]
     }),
 

@@ -34,6 +34,8 @@ export interface Cluster {
   created_at: string
   // joined from articles when fetched
   articles?: Article[]
+  // models this story covers, for internal cross-linking to /models/[slug]
+  models?: { slug: string; name: string }[]
 }
 
 // Model registry (Phase K) — Epoch AI–backed canonical model + its benchmarks.

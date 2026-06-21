@@ -16,7 +16,6 @@ export function SiteFooter() {
           <h2>Browse</h2>
           <Link href="/">Today</Link>
           <Link href="/models">Model tracker</Link>
-          <a href="/feed.xml">RSS feed</a>
         </nav>
       </div>
       <div className="anc-footer-base">© {new Date().getUTCFullYear()} Model Beat</div>

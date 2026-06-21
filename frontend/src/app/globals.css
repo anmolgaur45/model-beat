@@ -1455,7 +1455,7 @@ a.anc-src:hover { color: var(--accent-text); }
   font-family: var(--font-body);
 }
 .anc-cmain { flex: 1; min-width: 0; }
-.anc-cmain h4 {
+.anc-cmain h3 {
   margin: 0;
   font-size: 15px;
   font-weight: 550;
@@ -1557,6 +1557,20 @@ a.anc-src:hover { color: var(--accent-text); }
 .anc-dayfeed { margin-top: 22px; }
 .anc-day-back { display: inline-block; margin-bottom: 14px; font-size: 13px; color: var(--text2); }
 .anc-day-back:hover { color: var(--accent-text); }
+
+/* model cross-links on story/feature cards (news → /models/[slug]) */
+.anc-cmodels { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.anc-card > .anc-cmodels { padding: 0 16px 13px 54px; margin-top: -4px; }
+.anc-fmain .anc-cmodels { margin-top: 13px; }
+.anc-cmodels-label { font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text3); margin-right: 2px; }
+.anc-cmodel { padding: 3px 10px; border-radius: 999px; border: 1px solid var(--accent-line); background: var(--accent-dim); color: var(--accent-text); font-size: 12px; font-weight: 500; line-height: 1.4; }
+.anc-cmodel:hover { border-color: var(--accent); color: var(--text); }
+
+/* prev/next day chain — adjacent-day navigation on archive day pages */
+.anc-day-nav { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 40px; padding-top: 20px; border-top: 1px solid var(--line); }
+.anc-day-navlink { font-size: 13px; font-weight: 500; color: var(--text2); white-space: nowrap; }
+.anc-day-navlink:hover { color: var(--accent-text); }
+.anc-day-navlink.is-disabled { color: var(--text3); opacity: 0.45; }
 
 /* ─── Site footer (internal links / crawl paths) ─────────────────────────────── */
 .anc-footer { position: relative; z-index: 2; border-top: 1px solid var(--line); margin-top: 40px; padding: 40px 24px 28px; }

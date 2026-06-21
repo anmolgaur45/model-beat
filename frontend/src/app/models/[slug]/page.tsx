@@ -1,5 +1,6 @@
 import { cache } from 'react'
 import type { Metadata } from 'next'
+import { SITE_URL } from '@/lib/site'
 import { notFound } from 'next/navigation'
 import { appRouter } from '@/server/routers/_app'
 import { createContext } from '@/server/trpc'
@@ -11,7 +12,7 @@ import { benchmarkMeta, GROUP_ORDER, GROUP_LABELS } from '@/lib/benchmarks'
 export const revalidate = 3600
 
 const SLUG_RE = /^[a-z0-9-]+$/
-const SITE = process.env.NEXT_PUBLIC_URL ?? 'http://localhost:3000'
+const SITE = SITE_URL
 
 type ModelDetail = Model & {
   benchmarks: ModelBenchmark[]

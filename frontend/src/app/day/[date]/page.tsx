@@ -1,5 +1,6 @@
 import { cache } from 'react'
 import type { Metadata } from 'next'
+import { SITE_URL } from '@/lib/site'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { appRouter } from '@/server/routers/_app'
@@ -14,7 +15,7 @@ const TOP_STORY_MIN = 6
 export const revalidate = 3600
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
-const SITE = process.env.NEXT_PUBLIC_URL ?? 'http://localhost:3000'
+const SITE = SITE_URL
 
 // Format AND real-calendar check — rejects 9999-99-99 / 2026-02-31 before any
 // Date math runs (an invalid Date.toISOString() throws → 500 instead of 404).

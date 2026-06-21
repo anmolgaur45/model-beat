@@ -1,12 +1,13 @@
 import { appRouter } from '@/server/routers/_app'
 import { createContext } from '@/server/trpc'
 import type { Model } from '@/types/article'
+import { SITE_URL } from '@/lib/site'
 import { ModelsExplorer } from '@/components/ModelsExplorer'
 import { NavBar } from '@/components/NavBar'
 
 export const revalidate = 3600
 
-const SITE = process.env.NEXT_PUBLIC_URL ?? 'http://localhost:3000'
+const SITE = SITE_URL
 
 async function loadModels(): Promise<Model[]> {
   const caller = appRouter.createCaller(createContext())

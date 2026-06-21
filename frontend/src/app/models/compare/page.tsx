@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import { SITE_URL } from '@/lib/site'
 import { appRouter } from '@/server/routers/_app'
 import { createContext } from '@/server/trpc'
 import type { Model, ModelBenchmark } from '@/types/article'
@@ -9,7 +10,7 @@ import { NavBar } from '@/components/NavBar'
 
 export const revalidate = 3600
 
-const SITE = process.env.NEXT_PUBLIC_URL ?? 'http://localhost:3000'
+const SITE = SITE_URL
 const SLUG_RE = /^[a-z0-9-]+$/
 
 function parseSlugs(raw: string | string[] | undefined): string[] {

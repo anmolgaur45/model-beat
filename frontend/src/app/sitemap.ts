@@ -1,7 +1,7 @@
 import type { MetadataRoute } from 'next'
 import sql from '@/lib/db'
 
-const SITE = process.env.NEXT_PUBLIC_URL ?? 'http://localhost:3000'
+import { SITE_URL as SITE } from '@/lib/site'
 
 export const revalidate = 3600
 

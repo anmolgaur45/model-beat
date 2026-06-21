@@ -5,6 +5,7 @@ import { SpeedInsights } from '@vercel/speed-insights/next'
 import './globals.css'
 import { Providers } from './providers'
 import { SiteFooter } from '@/components/SiteFooter'
+import { SITE_URL } from '@/lib/site'
 
 const geistSans = Geist({
   variable: '--font-geist-sans',
@@ -23,7 +24,7 @@ const bricolage = Bricolage_Grotesque({
 })
 
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.NEXT_PUBLIC_URL ?? 'http://localhost:3000'),
+  metadataBase: new URL(SITE_URL),
   title: {
     default: 'Model Beat — Covering the AI beat, every day.',
     template: '%s | Model Beat',
@@ -69,7 +70,7 @@ export const metadata: Metadata = {
   },
 }
 
-const SITE = process.env.NEXT_PUBLIC_URL ?? 'http://localhost:3000'
+const SITE = SITE_URL
 
 const SITE_JSONLD = [
   {

@@ -454,6 +454,8 @@ a { cursor: pointer; text-decoration: none; color: inherit; }
 }
 .anc-tick .tick-score { color: var(--accent-text); font-weight: 700; }
 .anc-tick::after { content: '◆'; color: var(--text3); margin-left: 24px; font-size: 7px; }
+a.anc-tick { text-decoration: none; cursor: pointer; transition: color 0.15s ease; }
+a.anc-tick:hover { color: var(--accent-text); }
 
 /* ─── Hero section ───────────────────────────────────────────────────────────── */
 

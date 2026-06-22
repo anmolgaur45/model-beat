@@ -111,10 +111,19 @@ export const articlesRouter = router({
     )
     .query(async ({ input }) => {
       const since = new Date(Date.now() - input.days * 86_400_000).toISOString()
-      return sql<{ headline: string; significance_score: number }[]>`
-        SELECT headline, significance_score FROM clusters
-        WHERE first_published_at >= ${since}
-        ORDER BY significance_score DESC
+      // Carry the primary article's source URL (highest-significance article in
+      // the cluster) so the ticker headlines can link to the original.
+      return sql<{ headline: string; significance_score: number; source_url: string | null }[]>`
+        SELECT c.headline, c.significance_score, a.source_url
+        FROM clusters c
+        LEFT JOIN LATERAL (
+          SELECT source_url FROM articles
+          WHERE cluster_id = c.id
+          ORDER BY significance_base DESC NULLS LAST
+          LIMIT 1
+        ) a ON true
+        WHERE c.first_published_at >= ${since}
+        ORDER BY c.significance_score DESC
         LIMIT ${input.limit}
       `
     }),

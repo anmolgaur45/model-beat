@@ -11,8 +11,17 @@ const sql = postgres({
   ssl: process.env.DATABASE_SSL_CA
     ? { ca: process.env.DATABASE_SSL_CA, rejectUnauthorized: true }
     : { rejectUnauthorized: false },
-  max: 10,
-  idle_timeout: 20,
+  // Serverless pool sizing. Cloud SQL (db-f1-micro) allows 50 connections
+  // (47 usable after superuser reserve). Vercel fans out to many function
+  // instances, each with its OWN pool, so total connections ≈ max × busy
+  // instances — that product must stay under ~47 or Postgres refuses new
+  // connections. A Vercel function serves one request at a time and a single
+  // request issues at most ~3 parallel queries, so a small pool is plenty;
+  // keeping max low lets ~9 instances run concurrently before exhaustion
+  // (vs ~4–5 at max:10). Drop to 3 if connection pressure ever appears.
+  max: 5,
+  idle_timeout: 20, // release idle conns quickly between invocations
+  max_lifetime: 60 * 30, // recycle a connection every ~30 min
   connect_timeout: 10,
 })
 

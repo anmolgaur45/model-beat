@@ -61,11 +61,11 @@ export const metadata: Metadata = {
       'max-video-preview': -1,
     },
   },
+  // Model Beat equalizer mark as the browser-tab favicon (the default
+  // app/favicon.ico was removed so it can't override this). SVG favicons are
+  // supported by all current browsers.
   icons: {
-    icon: [
-      { url: '/favicon-eq.svg', type: 'image/svg+xml' },
-      { url: '/favicon.ico' },
-    ],
+    icon: [{ url: '/favicon-eq.svg', type: 'image/svg+xml' }],
     apple: '/icon-eq.svg',
   },
 }

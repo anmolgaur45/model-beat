@@ -50,9 +50,10 @@ export const TABS = [
   { key: 'newest' as const, label: 'Newest' },
   { key: 'overall' as const, label: 'Overall' },
   ...BUCKETS.map((b) => ({ key: b.key, label: b.label })),
+  { key: 'value' as const, label: 'Value' },
 ]
 
-export type TabKey = 'newest' | 'overall' | BucketKey
+export type TabKey = 'newest' | 'overall' | 'value' | BucketKey
 
 // Max models in one comparison / chart spotlight. Shared so the leaderboard
 // checkboxes and the chart picker enforce the same "my models" set.

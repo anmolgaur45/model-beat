@@ -21,9 +21,20 @@ function fmtPrice(m: Model): string {
   if (m.price_in == null || m.price_out == null) return '—'
   return `$${m.price_in.toFixed(2)} / $${m.price_out.toFixed(2)}`
 }
+// Intelligence per dollar: ECI ÷ blended ($/M) token price.
+function valueIndex(m: Model): number | null {
+  if (m.headline_score == null || m.price_in == null || m.price_out == null) return null
+  const blended = (m.price_in + m.price_out) / 2
+  return blended > 0 ? m.headline_score / blended : null
+}
 function activeScore(m: Model, tab: TabKey): number | null {
   if (tab === 'overall' || tab === 'newest') return m.headline_score ?? null
+  if (tab === 'value') return valueIndex(m)
   return m.buckets?.[tab] ?? null
+}
+// Plain number (no percentile bar) for ECI/value tabs.
+function isPlainScore(tab: TabKey): boolean {
+  return tab === 'newest' || tab === 'overall' || tab === 'value'
 }
 
 type SortKey = 'name' | 'released' | 'vendor' | 'context' | 'price' | 'score'
@@ -31,15 +42,18 @@ type AccessFilter = 'all' | 'open' | 'closed'
 
 export function ModelsLeaderboard({
   models,
+  tab,
+  onSelectTab,
   selected,
   setSelected,
 }: {
   models: Model[]
+  tab: TabKey
+  onSelectTab: (t: TabKey) => void
   selected: string[]
   setSelected: Dispatch<SetStateAction<string[]>>
 }) {
-  const [tab, setTab] = useState<TabKey>('newest')
-  const [sortKey, setSortKey] = useState<SortKey>('released')
+  const [sortKey, setSortKey] = useState<SortKey>(tab === 'newest' ? 'released' : 'score')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const [search, setSearch] = useState('')
   const [access, setAccess] = useState<AccessFilter>('all')
@@ -62,7 +76,7 @@ export function ModelsLeaderboard({
   }
 
   function selectTab(t: TabKey) {
-    setTab(t)
+    onSelectTab(t)
     setSortKey(t === 'newest' ? 'released' : 'score')
     setSortDir('desc')
   }
@@ -103,9 +117,9 @@ export function ModelsLeaderboard({
       })
   }, [models, search, access, multimodalOnly, sortKey, sortDir, tab])
 
-  // The score column shows ECI for Newest/Overall, the bucket composite otherwise.
-  const isEciTab = tab === 'newest' || tab === 'overall'
-  const scoreColLabel = isEciTab ? 'ECI' : TABS.find((t) => t.key === tab)!.label
+  // The score column shows ECI for Newest/Overall, the value index for Value,
+  // and the bucket percentile composite otherwise.
+  const scoreColLabel = tab === 'newest' || tab === 'overall' ? 'ECI' : TABS.find((t) => t.key === tab)!.label
   const arrow = (key: SortKey) => (sortKey === key ? (sortDir === 'asc' ? ' ↑' : ' ↓') : '')
 
   return (
@@ -129,7 +143,9 @@ export function ModelsLeaderboard({
           ? 'The latest model releases, newest first. Switch tabs to rank by capability.'
           : tab === 'overall'
             ? 'Ranked by the Epoch Capabilities Index (ECI) — Epoch AI’s composite intelligence score.'
-            : `${scoreColLabel} score is a 0–100 percentile composite across that area’s benchmarks. Open a model for the raw scores.`}
+            : tab === 'value'
+              ? 'Ranked by intelligence per dollar — ECI ÷ blended token price ($/M). Higher means more capability per dollar.'
+              : `${scoreColLabel} score is a 0–100 percentile composite across that area’s benchmarks. Open a model for the raw scores.`}
       </p>
 
       <div className="anc-lbfilters">
@@ -214,8 +230,8 @@ export function ModelsLeaderboard({
                 <span className="anc-mscore2" data-label={scoreColLabel}>
                   {sc == null ? (
                     '—'
-                  ) : isEciTab ? (
-                    Math.round(sc)
+                  ) : isPlainScore(tab) ? (
+                    tab === 'value' ? sc.toFixed(1) : Math.round(sc)
                   ) : (
                     <span className="anc-scorewrap">
                       <span className="anc-scorebar"><span style={{ width: `${sc}%` }} /></span>

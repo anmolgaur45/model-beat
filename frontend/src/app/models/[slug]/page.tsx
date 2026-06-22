@@ -8,6 +8,7 @@ import type { Model, ModelBenchmark, Cluster, Article } from '@/types/article'
 import { ModelTelemetry, type ModelView, type BenchRowView, type IndexGauge } from '@/components/ModelTelemetry'
 import { BUCKETS } from '@/lib/modelBuckets'
 import { benchmarkMeta, GROUP_ORDER, GROUP_LABELS } from '@/lib/benchmarks'
+import { flagshipModels, pairKey } from '@/lib/comparePairs'
 
 export const revalidate = 3600
 
@@ -59,6 +60,89 @@ function parseMods(s: string | null): string[] {
   if (!s) return []
   return s.split(',').map((t) => t.trim().toLowerCase()).filter(Boolean)
 }
+function accessLabel(m: Model): string | null {
+  if (m.accessibility) return m.accessibility
+  if (m.is_open_weight === true) return 'Open weights'
+  if (m.is_open_weight === false) return 'Proprietary'
+  return null
+}
+function fmtUpdated(iso: string | null | undefined): string {
+  if (!iso) return ''
+  return new Date(iso).toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' })
+}
+
+// Top benchmarks by percentile rank — drives the "strongest results" FAQ answer.
+function topBenchmarks(model: ModelDetail, n: number): ModelBenchmark[] {
+  return model.benchmarks
+    .filter((b) => b.benchmark !== 'Epoch Capabilities Index' && b.percentile != null)
+    .sort((a, b) => (b.percentile ?? 0) - (a.percentile ?? 0))
+    .slice(0, n)
+}
+
+// Data-driven Q&A, included only when we actually hold the answer. Powers both
+// the on-page FAQ (GEO/citeable) and the FAQPage JSON-LD.
+function buildFaq(model: ModelDetail): { q: string; a: string }[] {
+  const faq: { q: string; a: string }[] = []
+  const name = model.name
+
+  faq.push({ q: `What is ${name}?`, a: model.description ?? synopsis(model) })
+
+  if (model.vendor) {
+    const bits = [`${name} is an AI model developed by ${model.vendor}`]
+    if (model.family) bits.push(`part of the ${model.family} family`)
+    if (model.released_at) bits.push(`released ${fmtReleased(model.released_at)}`)
+    faq.push({ q: `Who created ${name}?`, a: `${bits.join(', ')}.` })
+  }
+
+  if (model.price_in != null || model.price_out != null) {
+    faq.push({
+      q: `How much does ${name} cost?`,
+      a: `${name} is priced at ${usd(model.price_in)} per million input tokens and ${usd(model.price_out)} per million output tokens (representative pricing via OpenRouter).`,
+    })
+  }
+
+  if (model.context_window) {
+    faq.push({
+      q: `What is ${name}'s context window?`,
+      a: `${name} supports a context window of up to ${fmtContext(model.context_window)} tokens.`,
+    })
+  }
+
+  const top = topBenchmarks(model, 3)
+  if (top.length > 0) {
+    const parts = top.map((b) => `${scoreLabel(b)} on ${b.benchmark}`)
+    faq.push({
+      q: `How does ${name} perform on benchmarks?`,
+      a: `On standardized evaluations tracked by Epoch AI, ${name} scores ${parts.join(', ')}.`,
+    })
+  }
+
+  const access = accessLabel(model)
+  if (access) {
+    const open = model.is_open_weight === true || /open/i.test(access)
+    faq.push({
+      q: `Is ${name} open source?`,
+      a: open
+        ? `${name} is released with open weights (${access}), so the model can be downloaded and self-hosted.`
+        : `${name} is a proprietary model (${access}), available through its provider's API rather than as a downloadable open-weight model.`,
+    })
+  }
+
+  return faq
+}
+
+// One-line, data-dense meta description tuned for entity queries.
+function metaDescription(model: ModelDetail): string {
+  const facts: string[] = []
+  const top = topBenchmarks(model, 1)[0]
+  if (top) facts.push(`scores ${scoreLabel(top)} on ${top.benchmark}`)
+  if (model.price_in != null) facts.push(`${usd(model.price_in)}/${usd(model.price_out)} per 1M tokens`)
+  if (model.context_window) facts.push(`${fmtContext(model.context_window)} context`)
+  const lead = `${model.name}${model.vendor ? ` by ${model.vendor}` : ''}`
+  const factPart = facts.length ? `${facts.join(', ')}. ` : ''
+  const desc = `${lead}: ${factPart}Compare benchmarks, pricing and specs, plus the latest ${model.name} news.`
+  return desc.length > 160 ? `${desc.slice(0, 157)}…` : desc
+}
 
 // Map a real model + its benchmarks into the MODEL contract the design renders from.
 function toView(model: ModelDetail): ModelView {
@@ -70,6 +154,13 @@ function toView(model: ModelDetail): ModelView {
   const bucket = Object.fromEntries(BUCKETS.map((b) => [b.key, composite(b.benchmarks)])) as Record<string, number | null>
   const present = BUCKETS.map((b) => bucket[b.key]).filter((v): v is number => v != null)
   const overall = present.length ? Math.round(present.reduce((a, b) => a + b, 0) / present.length) : null
+
+  // "Strongest at": the use-case buckets where this model genuinely ranks high.
+  const bestAt = BUCKETS
+    .map((b) => ({ label: b.label, pct: bucket[b.key] }))
+    .filter((x): x is { label: string; pct: number } => x.pct != null && x.pct >= 60)
+    .sort((a, b) => b.pct - a.pct)
+    .slice(0, 3)
 
   const indices: IndexGauge[] = []
   if (overall != null) indices.push({ value: overall, label: 'Intelligence Index', percentile: overall })
@@ -116,6 +207,9 @@ function toView(model: ModelDetail): ModelView {
     groups,
     sourceUrl: src.url,
     sourceLabel: src.label,
+    bestAt,
+    faq: buildFaq(model),
+    updated: fmtUpdated(model.updated_at),
     news: model.clusters.map((c) => {
       const primary = c.articles[0]
       return {
@@ -137,22 +231,23 @@ export async function generateMetadata({
   if (!SLUG_RE.test(slug)) return {}
   const model = await loadModel(slug).catch(() => null)
   if (!model) return {}
-  const description = (model.description ?? synopsis(model)).slice(0, 200)
+  const title = `${model.name} — benchmarks, pricing & specs`
+  const description = metaDescription(model)
   const url = `${SITE}/models/${slug}`
   return {
-    title: `${model.name} — specs, benchmarks & news`,
+    title,
     description,
     alternates: { canonical: url },
     openGraph: {
       type: 'article',
-      title: `${model.name} — specs, benchmarks & news`,
+      title,
       description,
       url,
       images: [{ url: `/api/og?title=${encodeURIComponent(model.name)}`, width: 1200, height: 630 }],
     },
     twitter: {
       card: 'summary_large_image',
-      title: `${model.name} — specs, benchmarks & news`,
+      title,
       description,
       images: [`/api/og?title=${encodeURIComponent(model.name)}`],
     },
@@ -171,6 +266,13 @@ export default async function ModelPage({
   if (!model) notFound()
 
   const view = toView(model)
+
+  // Internal links to comparison pages — this model vs the frontier flagships.
+  const flagships = await flagshipModels()
+  view.compareWith = flagships
+    .filter((f) => f.slug !== model.slug)
+    .slice(0, 5)
+    .map((f) => ({ name: f.name, href: `/models/compare/${pairKey(model.slug, f.slug)}` }))
 
   const jsonLd = [
     {
@@ -193,6 +295,17 @@ export default async function ModelPage({
         { '@type': 'ListItem', position: 3, name: model.name, item: `${SITE}/models/${slug}` },
       ],
     },
+    ...(view.faq.length > 0
+      ? [{
+          '@context': 'https://schema.org',
+          '@type': 'FAQPage',
+          mainEntity: view.faq.map((f) => ({
+            '@type': 'Question',
+            name: f.q,
+            acceptedAnswer: { '@type': 'Answer', text: f.a },
+          })),
+        }]
+      : []),
   ]
 
   return (

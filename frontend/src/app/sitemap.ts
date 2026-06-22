@@ -2,6 +2,8 @@ import type { MetadataRoute } from 'next'
 import sql from '@/lib/db'
 
 import { SITE_URL as SITE } from '@/lib/site'
+import { comparePairs } from '@/lib/comparePairs'
+import { BEST_VIEWS } from '@/lib/bestModels'
 
 export const revalidate = 3600
 
@@ -38,9 +40,26 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.6,
   }))
 
+  // Curated "X vs Y" comparison pages (Workstream A).
+  const pairs = await comparePairs().catch(() => [])
+  const comparePages: MetadataRoute.Sitemap = pairs.map((p) => ({
+    url: `${SITE}/models/compare/${p.a}-vs-${p.b}`,
+    lastModified: new Date(),
+    changeFrequency: 'weekly',
+    priority: 0.6,
+  }))
+
   return [
     { url: SITE, lastModified: new Date(), changeFrequency: 'hourly', priority: 1 },
     { url: `${SITE}/models`, lastModified: new Date(), changeFrequency: 'daily', priority: 0.8 },
+    { url: `${SITE}/models/compare`, lastModified: new Date(), changeFrequency: 'weekly', priority: 0.6 },
+    ...BEST_VIEWS.map((v) => ({
+      url: `${SITE}/models/best/${v.key}`,
+      lastModified: new Date(),
+      changeFrequency: 'weekly' as const,
+      priority: 0.7,
+    })),
+    ...comparePages,
     ...modelPages,
     ...days,
   ]

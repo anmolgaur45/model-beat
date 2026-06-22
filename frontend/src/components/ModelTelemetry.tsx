@@ -46,6 +46,10 @@ export interface ModelView {
   groups: BenchGroupView[]
   sourceUrl: string
   sourceLabel: string
+  bestAt: { label: string; pct: number }[]
+  faq: { q: string; a: string }[]
+  updated: string
+  compareWith?: { name: string; href: string }[]
   news: { headline: string; url: string | null; source: string; date: string }[]
 }
 
@@ -221,6 +225,17 @@ export function ModelTelemetry({ view: M }: { view: ModelView }) {
           </div>
         </div>
 
+        {M.bestAt.length > 0 && (
+          <div className="m2-bestat">
+            <span className="lbl">Strongest at</span>
+            {M.bestAt.map((b) => (
+              <span className="chip" key={b.label}>
+                {b.label} <i>top {100 - b.pct}%</i>
+              </span>
+            ))}
+          </div>
+        )}
+
         <section className="m2-section">
           <div className="m2-sec-head">
             <span className="ic">
@@ -305,11 +320,45 @@ export function ModelTelemetry({ view: M }: { view: ModelView }) {
           </section>
         )}
 
+        {M.compareWith && M.compareWith.length > 0 && (
+          <section className="m2-section m2-comparewith">
+            <div className="m2-group-head">
+              <h3>Compare {M.name} with</h3>
+              <span className="rule" />
+            </div>
+            <div className="m2-cwlist">
+              {M.compareWith.map((c) => (
+                <Link key={c.href} href={c.href} className="m2-cwchip">
+                  {M.name} <span className="vs">vs</span> {c.name}
+                </Link>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {M.faq.length > 0 && (
+          <section className="m2-section m2-faq">
+            <div className="m2-group-head">
+              <h2>Frequently asked questions</h2>
+              <span className="rule" />
+            </div>
+            <div className="m2-faqlist">
+              {M.faq.map((f, i) => (
+                <details className="m2-faqitem" key={i}>
+                  <summary>{f.q}</summary>
+                  <p>{f.a}</p>
+                </details>
+              ))}
+            </div>
+          </section>
+        )}
+
         <p className="anc-epoch-credit">
           Model &amp; benchmark data from{' '}
           <a href="https://epoch.ai/data/ai-models" target="_blank" rel="noopener noreferrer">Epoch AI</a>{' '}
           (CC BY); pricing, specs &amp; descriptions from{' '}
           <a href="https://openrouter.ai/models" target="_blank" rel="noopener noreferrer">OpenRouter</a>.
+          {M.updated && <> Data updated {M.updated}.</>}
         </p>
       </div>
 

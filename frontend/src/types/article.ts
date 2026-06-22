@@ -59,6 +59,7 @@ export interface Model {
   description: string | null
   primary_url: string | null
   significance: number
+  updated_at?: string | null // last registry sync (freshness signal)
   // pricing & specs from OpenRouter (Phase O1); null when not served by OpenRouter
   openrouter_id: string | null
   price_in: number | null // USD per 1M input tokens

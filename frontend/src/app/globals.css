@@ -764,6 +764,27 @@ a { cursor: pointer; text-decoration: none; color: inherit; }
 }
 .anc-cmp-cell.is-best { color: var(--accent-text); font-weight: 700; }
 .anc-cmp-legend { font-size: 12px; color: var(--text3); line-height: 1.55; max-width: 620px; margin: 22px 0 0; }
+
+/* verdict bullets on the static comparison pages */
+.anc-cmp-verdict { list-style: none; margin: 18px 0 28px; padding: 16px 18px; border: 1px solid var(--accent-line); border-radius: 14px; background: var(--accent-dim); display: flex; flex-direction: column; gap: 9px; }
+.anc-cmp-verdict li { position: relative; padding-left: 22px; font-size: 14px; line-height: 1.5; color: var(--text); }
+.anc-cmp-verdict li::before { content: '✓'; position: absolute; left: 0; top: 0; color: var(--accent-text); font-weight: 700; }
+.anc-cmp-toolnote { font-size: 13px; color: var(--text3); margin: 26px 0 0; }
+.anc-cmp-toolnote a { color: var(--accent-text); text-decoration: underline; }
+
+/* "Popular / more comparisons" link hub */
+.anc-cmp-popular { margin-top: 42px; }
+.anc-cmp-popular h2 { font-family: var(--font-display); font-weight: 700; font-size: 19px; letter-spacing: -0.02em; margin: 0 0 14px; }
+.anc-cmp-popular ul { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 8px; }
+.anc-cmp-popular a { display: block; padding: 11px 14px; border: 1px solid var(--line); border-radius: 11px; background: linear-gradient(180deg, var(--bg-card-strong), var(--bg-card)); color: var(--text2); font-size: 13.5px; font-weight: 550; }
+.anc-cmp-popular a:hover { border-color: var(--accent-line); color: var(--text); }
+
+/* "Compare X with" chips on the model page */
+.m2-cwlist { margin-top: 14px; display: flex; flex-wrap: wrap; gap: 8px; }
+.m2-cwchip { padding: 8px 13px; border: 1px solid var(--line); border-radius: 999px; background: linear-gradient(180deg, var(--bg-card-strong), var(--bg-card)); color: var(--text2); font-size: 13px; font-weight: 550; }
+.m2-cwchip:hover { border-color: var(--accent-line); color: var(--text); }
+.m2-cwchip .vs { color: var(--text3); font-weight: 400; margin: 0 2px; }
+
 /* inline model picker on the compare page — a single tag-input control */
 .anc-cmp-pick-sub { font-size: 13.5px; color: var(--text3); line-height: 1.5; margin: 10px 0 0; max-width: 640px; }
 .anc-cmpctl { position: relative; max-width: 600px; margin: 20px 0 32px; }
@@ -1036,6 +1057,22 @@ a { cursor: pointer; text-decoration: none; color: inherit; }
 .mtag { font-family: var(--font-mono); font-size: 11px; padding: 3px 9px; border-radius: 7px; border: 1px solid var(--line); color: var(--text2); text-transform: lowercase; }
 .mtag.out { color: var(--accent-text); border-color: var(--accent-line); background: var(--accent-dim); }
 .marrow { color: var(--accent-text); font-family: var(--font-mono); margin: 0 2px; }
+
+/* "Strongest at" chips */
+.m2-bestat { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.m2-bestat .lbl { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--text3); margin-right: 2px; }
+.m2-bestat .chip { font-size: 13px; font-weight: 600; padding: 5px 11px; border-radius: 999px; color: var(--accent-text); background: var(--accent-dim); border: 1px solid var(--accent-line); }
+.m2-bestat .chip i { font-style: normal; font-weight: 500; color: var(--text3); font-size: 11.5px; }
+
+/* FAQ */
+.m2-faq .m2-group-head h2 { margin: 0; font-family: var(--font-display); font-weight: 700; font-size: 20px; letter-spacing: -0.02em; }
+.m2-faqlist { margin-top: 16px; display: flex; flex-direction: column; gap: 8px; }
+.m2-faqitem { border: 1px solid var(--line); border-radius: 12px; background: linear-gradient(180deg, var(--bg-card-strong), var(--bg-card)); padding: 2px 16px; }
+.m2-faqitem summary { list-style: none; cursor: pointer; padding: 14px 0; font-size: 15px; font-weight: 600; color: var(--text); display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.m2-faqitem summary::-webkit-details-marker { display: none; }
+.m2-faqitem summary::after { content: '+'; color: var(--accent-text); font-size: 18px; font-weight: 400; line-height: 1; }
+.m2-faqitem[open] summary::after { content: '–'; }
+.m2-faqitem p { margin: 0; padding: 0 0 16px; font-size: 14px; line-height: 1.6; color: var(--text2); }
 
 /* benchmarks */
 .m2-section { margin-top: 52px; }

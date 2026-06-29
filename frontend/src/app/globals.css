@@ -457,6 +457,48 @@ a { cursor: pointer; text-decoration: none; color: inherit; }
 a.anc-tick { text-decoration: none; cursor: pointer; transition: color 0.15s ease; }
 a.anc-tick:hover { color: var(--accent-text); }
 
+/* ── Stack Watch waitlist banner ─────────────────────────────────────────── */
+.anc-swbanner { display: flex; align-items: center; gap: 8px; max-width: 1100px; margin: 12px auto 0; padding: 9px 14px; border: 1px solid var(--accent-line); background: var(--accent-dim); border-radius: 12px; }
+.anc-swbanner-link { display: flex; align-items: center; gap: 9px; flex: 1; min-width: 0; color: var(--text2); font-size: 13px; text-decoration: none; }
+.anc-swbanner-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+.anc-swbanner-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.anc-swbanner-cta { flex: none; color: var(--accent-text); font-weight: 650; white-space: nowrap; }
+.anc-swbanner-link:hover .anc-swbanner-cta { text-decoration: underline; }
+.anc-swbanner-x { flex: none; background: none; border: 0; color: var(--text3); font-size: 13px; cursor: pointer; padding: 2px 4px; line-height: 1; }
+.anc-swbanner-x:hover { color: var(--text); }
+@media (max-width: 640px) { .anc-swbanner-cta { display: none; } }
+
+/* ── Stack Watch landing page ────────────────────────────────────────────── */
+.anc-sw { max-width: 760px; margin: 0 auto; padding: 92px 24px 90px; }
+.anc-sw-h1 { font-family: var(--font-display); font-weight: 800; font-size: clamp(28px, 5vw, 42px); line-height: 1.1; letter-spacing: -0.02em; margin: 10px 0 0; }
+.anc-sw-lead { font-size: 16px; line-height: 1.6; color: var(--text2); margin: 18px 0 0; max-width: 640px; }
+.anc-sw-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin: 34px 0 0; }
+.anc-sw-card { border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; background: linear-gradient(180deg, var(--bg-card-strong), var(--bg-card)); }
+.anc-sw-tag { display: inline-block; font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent-text); background: var(--accent-dim); border: 1px solid var(--accent-line); border-radius: 6px; padding: 2px 7px; }
+.anc-sw-card h3 { font-size: 15.5px; font-weight: 700; letter-spacing: -0.01em; margin: 11px 0 6px; }
+.anc-sw-card p { font-size: 13.5px; line-height: 1.5; color: var(--text2); margin: 0; }
+.anc-sw-cta { margin: 40px 0 0; padding: 26px; border: 1px solid var(--accent-line); border-radius: 16px; background: var(--accent-dim); }
+.anc-sw-cta h2 { font-family: var(--font-display); font-weight: 700; font-size: 22px; letter-spacing: -0.02em; margin: 0; }
+.anc-sw-cta > p { font-size: 14px; line-height: 1.55; color: var(--text2); margin: 8px 0 18px; max-width: 560px; }
+.anc-sw-foot { margin: 36px 0 0; font-size: 13px; }
+.anc-sw-foot a { color: var(--text3); text-decoration: none; }
+.anc-sw-foot a:hover { color: var(--text); }
+@media (max-width: 560px) { .anc-sw-grid { grid-template-columns: 1fr; } }
+
+/* ── Waitlist form ───────────────────────────────────────────────────────── */
+.anc-wl-form { display: flex; flex-direction: column; gap: 10px; max-width: 460px; }
+.anc-wl-email, .anc-wl-stack { width: 100%; padding: 12px 14px; border: 1px solid var(--line2); border-radius: 11px; background: var(--bg-search); color: var(--text); font-size: 14px; font-family: inherit; }
+.anc-wl-email:focus, .anc-wl-stack:focus { outline: none; border-color: var(--accent-line); }
+.anc-wl-stack { resize: vertical; }
+.anc-wl-hp { position: absolute; left: -9999px; width: 1px; height: 1px; opacity: 0; }
+.anc-wl-btn { align-self: flex-start; padding: 11px 20px; border: 0; border-radius: 11px; background: var(--accent); color: #06120c; font-size: 14px; font-weight: 700; cursor: pointer; transition: opacity 0.15s ease; }
+.anc-wl-btn:hover { opacity: 0.9; }
+.anc-wl-btn:disabled { opacity: 0.6; cursor: default; }
+.anc-wl-err { color: #ff6b6b; font-size: 13px; margin: 2px 0 0; }
+.anc-wl-success { display: flex; flex-direction: column; gap: 4px; padding: 18px 20px; border: 1px solid var(--accent-line); border-radius: 12px; background: var(--accent-dim); max-width: 460px; }
+.anc-wl-success strong { font-size: 15px; color: var(--text); }
+.anc-wl-success span { font-size: 13.5px; color: var(--text2); }
+
 /* ─── Hero section ───────────────────────────────────────────────────────────── */
 
 .anc-hero {

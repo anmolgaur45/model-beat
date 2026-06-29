@@ -50,6 +50,7 @@ yarn-error.log*
 
 # internal / dev tooling
 tasks/
+marketing/
 PLAN.md
 plan.md
 CLAUDE.md

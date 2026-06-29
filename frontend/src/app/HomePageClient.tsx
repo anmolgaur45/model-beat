@@ -13,6 +13,7 @@ import { StoryCard } from '@/components/StoryCard'
 import { Recap } from '@/components/Recap'
 import { NavBar } from '@/components/NavBar'
 import { Ticker } from '@/components/Ticker'
+import { WaitlistBanner } from '@/components/WaitlistBanner'
 import { CATEGORY_LABELS } from '@/components/categoryMeta'
 
 // Exact router output shapes so initialData matches the query's data type.
@@ -197,6 +198,9 @@ export default function HomePageClient({ initialDate, initialClusters, initialTo
           setSelectedDate(todayISO())
         }}
       />
+
+      {/* Stack Watch waitlist promo (dismissible) */}
+      <WaitlistBanner />
 
       {/* Ticker */}
       {timelineMode && <Ticker stories={topStories ?? []} />}

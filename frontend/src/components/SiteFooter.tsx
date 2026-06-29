@@ -14,8 +14,9 @@ export function SiteFooter() {
 
         <nav className="anc-footer-col" aria-label="Site">
           <h2>Browse</h2>
-          <Link href="/">Today</Link>
-          <Link href="/models">Model tracker</Link>
+          <Link href="/">News</Link>
+          <Link href="/models">Models</Link>
+          <Link href="/privacy">Privacy Policy</Link>
         </nav>
       </div>
       <div className="anc-footer-base">© {new Date().getUTCFullYear()} Model Beat</div>

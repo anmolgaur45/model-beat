@@ -61,7 +61,7 @@ export function ModelsExplorer({
               className={view === 'table' ? 'is-active' : ''}
               onClick={() => setView('table')}
             >
-              <TableIcon /> Table
+              <TableIcon /> Leaderboard
             </button>
             <button
               role="tab"
@@ -69,7 +69,7 @@ export function ModelsExplorer({
               className={view === 'charts' ? 'is-active' : ''}
               onClick={() => setView('charts')}
             >
-              <ChartIcon /> Charts
+              <ChartIcon /> Insights
             </button>
           </div>
         )}

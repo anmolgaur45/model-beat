@@ -55,6 +55,7 @@ export default function StackWatchPage() {
       <NavBar />
 
       <main className="anc-sw">
+        <Link className="anc-day-back" href="/">← Back to Model Beat</Link>
         <div className="anc-kicker">Early access</div>
         <h1 className="anc-sw-h1">
           Stop getting blindsided when the models you depend on change.
@@ -82,11 +83,11 @@ export default function StackWatchPage() {
             Join the list and you’ll be first in, and you’ll help shape what it watches.
           </p>
           <WaitlistForm source="stack-watch" />
+          <p className="anc-sw-fineprint">
+            No spam. We&rsquo;ll only email you about Stack Watch. See our{' '}
+            <Link href="/privacy">Privacy Policy</Link>.
+          </p>
         </section>
-
-        <p className="anc-sw-foot">
-          <Link href="/">← Back to Model Beat</Link>
-        </p>
       </main>
     </div>
   )

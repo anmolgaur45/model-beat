@@ -480,10 +480,17 @@ a.anc-tick:hover { color: var(--accent-text); }
 .anc-sw-cta { margin: 40px 0 0; padding: 26px; border: 1px solid var(--accent-line); border-radius: 16px; background: var(--accent-dim); }
 .anc-sw-cta h2 { font-family: var(--font-display); font-weight: 700; font-size: 22px; letter-spacing: -0.02em; margin: 0; }
 .anc-sw-cta > p { font-size: 14px; line-height: 1.55; color: var(--text2); margin: 8px 0 18px; max-width: 560px; }
-.anc-sw-foot { margin: 36px 0 0; font-size: 13px; }
-.anc-sw-foot a { color: var(--text3); text-decoration: none; }
-.anc-sw-foot a:hover { color: var(--text); }
 @media (max-width: 560px) { .anc-sw-grid { grid-template-columns: 1fr; } }
+.anc-sw-fineprint { font-size: 12.5px; color: var(--text3); margin: 14px 0 0; }
+.anc-sw-fineprint a { color: var(--accent-text); text-decoration: underline; }
+
+/* ── Legal pages (privacy) ───────────────────────────────────────────────── */
+.anc-legal { max-width: 720px; margin: 0 auto; padding: 92px 24px 90px; }
+.anc-legal h1 { font-family: var(--font-display); font-weight: 800; font-size: clamp(28px, 5vw, 38px); letter-spacing: -0.02em; margin: 10px 0 0; }
+.anc-legal-updated { font-size: 13px; color: var(--text3); margin: 8px 0 0; }
+.anc-legal h2 { font-family: var(--font-display); font-weight: 700; font-size: 19px; letter-spacing: -0.01em; margin: 30px 0 0; }
+.anc-legal p { font-size: 15px; line-height: 1.65; color: var(--text2); margin: 12px 0 0; }
+.anc-legal a { color: var(--accent-text); text-decoration: underline; }
 
 /* ── Waitlist form ───────────────────────────────────────────────────────── */
 .anc-wl-form { display: flex; flex-direction: column; gap: 10px; max-width: 460px; }

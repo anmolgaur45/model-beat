@@ -48,6 +48,15 @@ class Settings(BaseSettings):
     epoch_benchmark_url: str = "https://epoch.ai/data/benchmark_data.zip"
     # Pricing & specs (Phase O1) from OpenRouter's public, no-auth model catalog.
     openrouter_models_url: str = "https://openrouter.ai/api/v1/models"
+    # Auto-create registry rows for models released within this window that
+    # OpenRouter lists but Epoch hasn't scored yet, so fresh releases appear
+    # immediately (Phase O5). Epoch adopts the row once it publishes scores.
+    openrouter_new_model_days: int = 60
+    # Artificial Analysis free API (Phase O5): individual benchmark scores for
+    # models Epoch hasn't scored yet. Fills gaps only — Epoch stays authoritative.
+    # Skipped when the key is unset (CI / unconfigured envs stay green).
+    aa_api_url: str = "https://artificialanalysis.ai/api/v2/data/llms/models"
+    aa_api_key: str = ""
 
     revalidate_url: str = ""
     cron_secret: str = ""

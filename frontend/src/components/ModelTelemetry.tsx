@@ -358,9 +358,11 @@ export function ModelTelemetry({ view: M }: { view: ModelView }) {
         )}
 
         <p className="anc-epoch-credit">
-          Model &amp; benchmark data from{' '}
+          Benchmark data from{' '}
           <a href="https://epoch.ai/data/ai-models" target="_blank" rel="noopener noreferrer">Epoch AI</a>{' '}
-          (CC BY); pricing, specs &amp; descriptions from{' '}
+          (CC BY) and{' '}
+          <a href="https://artificialanalysis.ai" target="_blank" rel="noopener noreferrer">Artificial Analysis</a>;
+          {' '}pricing, specs &amp; descriptions from{' '}
           <a href="https://openrouter.ai/models" target="_blank" rel="noopener noreferrer">OpenRouter</a>.
           {M.updated && <> Data updated {M.updated}.</>}
         </p>

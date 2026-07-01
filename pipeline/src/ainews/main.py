@@ -15,8 +15,10 @@ from .processing.clustering import cluster_pending
 from .processing.summarize import summarize_pending
 from .processing.model_registry import (
     sync_models,
+    create_missing_models,
     sync_benchmarks,
     sync_pricing,
+    sync_aa_benchmarks,
     link_model_coverage,
 )
 
@@ -217,15 +219,21 @@ def main() -> None:
 
         # Model registry (Phase K) — Epoch AI sync + news linkage. Fault-isolated:
         # an Epoch outage or schema change must not fail the run.
-        synced = benched = priced = linked = 0
+        synced = created = benched = priced = aa_benched = linked = 0
         try:
             synced = sync_models(conn)
+            created = create_missing_models(conn)
             benched = sync_benchmarks(conn)
             priced = sync_pricing(conn)
+            aa_benched = sync_aa_benchmarks(conn)
             linked = link_model_coverage(conn)
         except Exception as exc:
             log.warning("pipeline.model_registry_failed", error=str(exc))
-        log.info("pipeline.models", synced=synced, benched=benched, priced=priced, linked=linked)
+        log.info(
+            "pipeline.models",
+            synced=synced, created=created, benched=benched,
+            priced=priced, aa_benched=aa_benched, linked=linked,
+        )
 
         log.info(
             "pipeline.done",

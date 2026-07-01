@@ -7,7 +7,7 @@
 // data has no reliable availability signal to derive this from. Availability
 // withdrawal is an editorial call, so it lives here and survives syncs.
 export const UNAVAILABLE_MODEL_SLUGS = new Set<string>([
-  'claude-fable-5', // access withdrawn
+  // (empty) — Fable 5 access was restored 2026-06-30.
 ])
 
 export function isModelAvailable(slug: string): boolean {

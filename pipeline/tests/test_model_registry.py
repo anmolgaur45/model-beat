@@ -329,3 +329,79 @@ def test_parse_openrouter_models_prefers_cheapest_nonzero_variant():
     ]
     rec = parse_openrouter_models(data)[normalize_key("model")]
     assert rec["price_in"] == 1.0  # cheapest non-zero input price wins
+
+
+# ── Phase O5: OpenRouter auto-create + AA benchmark ingest ──────────────────────
+
+from datetime import datetime, timedelta, timezone as _tz
+from ainews.processing.model_registry import (
+    split_or_name,
+    openrouter_new_model_rows,
+    parse_aa_models,
+    aa_base_key,
+)
+
+
+def _ts(days_ago: int) -> int:
+    return int((datetime.now(_tz.utc) - timedelta(days=days_ago)).timestamp())
+
+
+def test_split_or_name_separates_vendor():
+    assert split_or_name("Anthropic: Claude Sonnet 5") == ("Anthropic", "Claude Sonnet 5")
+    assert split_or_name("SomeModel") == (None, "SomeModel")
+    assert split_or_name(None) == (None, None)
+
+
+def test_openrouter_new_model_rows_recency_and_curation():
+    catalog = {
+        "fresh":  {"openrouter_id": "anthropic/claude-sonnet-5", "name": "Anthropic: Claude Sonnet 5",
+                   "created": _ts(2), "price_in": 3.0, "context_window": 1000000, "output_modalities": "text"},
+        "old":    {"openrouter_id": "x/old", "name": "X: Old Model", "created": _ts(400),
+                   "output_modalities": "text"},
+        "image":  {"openrouter_id": "g/banana", "name": "Google: Nano Banana", "created": _ts(1),
+                   "output_modalities": "image, text"},
+        "alias":  {"openrouter_id": "o/gpt-latest", "name": "OpenAI: GPT Chat Latest", "created": _ts(1),
+                   "output_modalities": "text"},
+        "router": {"openrouter_id": "openrouter/fusion", "name": "OpenRouter: Fusion", "created": _ts(1),
+                   "output_modalities": "text"},
+    }
+    rows = openrouter_new_model_rows(catalog, existing_keys=set(), days=60)
+    names = {r["name"] for r in rows}
+    assert names == {"Claude Sonnet 5"}  # old/image/alias/router all filtered
+    r = rows[0]
+    assert r["slug"] == "claude-sonnet-5" and r["vendor"] == "Anthropic" and r["price_in"] == 3.0
+
+
+def test_openrouter_new_model_rows_skips_existing():
+    # Catalog is keyed by the normalized OpenRouter key (as parse_openrouter_models
+    # produces), which matches normalize_key(name) for a model already in the registry.
+    key = normalize_key("B Model")
+    catalog = {key: {"openrouter_id": "a/b", "name": "A: B Model", "created": _ts(1), "output_modalities": "text"}}
+    assert openrouter_new_model_rows(catalog, existing_keys={key}, days=60) == []
+
+
+def test_aa_base_key_strips_effort_variant():
+    assert aa_base_key("GPT-5.5 (high)") == aa_base_key("GPT-5.5 (low)") == normalize_key("GPT-5.5")
+
+
+def test_parse_aa_models_maps_benchmarks_and_collapses_variants():
+    data = [
+        {"name": "GPT-5.5 (low)", "evaluations": {"artificial_analysis_intelligence_index": 40,
+                                                   "gpqa": 0.80, "scicode": 0.40}},
+        {"name": "GPT-5.5 (high)", "evaluations": {"artificial_analysis_intelligence_index": 53,
+                                                    "gpqa": 0.93, "scicode": 0.56, "mmlu_pro": 0.89}},
+    ]
+    cat = parse_aa_models(data)
+    key = normalize_key("GPT-5.5")
+    assert key in cat
+    # strongest variant (high, ii=53) wins
+    assert cat[key]["GPQA Diamond"] == (0.93, "%")
+    assert cat[key]["SciCode"] == (0.56, "%")
+    assert cat[key]["MMLU-Pro"] == (0.89, "%")
+
+
+def test_parse_aa_models_ignores_null_scores():
+    data = [{"name": "M", "evaluations": {"gpqa": None, "hle": 0.4, "aime": None}}]
+    cat = parse_aa_models(data)
+    scores = cat[normalize_key("M")]
+    assert "GPQA Diamond" not in scores and scores["Humanity's Last Exam"] == (0.4, "%")

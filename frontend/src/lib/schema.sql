@@ -90,3 +90,6 @@ ALTER TABLE models ADD COLUMN IF NOT EXISTS price_out         FLOAT;
 ALTER TABLE models ADD COLUMN IF NOT EXISTS context_window    INT;
 ALTER TABLE models ADD COLUMN IF NOT EXISTS input_modalities  TEXT;
 ALTER TABLE models ADD COLUMN IF NOT EXISTS output_modalities TEXT;
+
+-- Phase O5: benchmark provenance (epoch authoritative, aa fills gaps).
+ALTER TABLE model_benchmarks ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'epoch';

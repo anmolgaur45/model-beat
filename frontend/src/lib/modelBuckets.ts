@@ -16,7 +16,10 @@ export const BUCKETS: Bucket[] = [
   {
     key: 'coding',
     label: 'Coding',
-    benchmarks: ['SWE-bench Verified', 'Terminal-Bench', 'GSO (code optimization)', 'WebDev Arena'],
+    benchmarks: [
+      'SWE-bench Verified', 'Terminal-Bench', 'GSO (code optimization)', 'WebDev Arena',
+      'LiveCodeBench', 'SciCode',
+    ],
   },
   {
     key: 'math',
@@ -34,12 +37,13 @@ export const BUCKETS: Bucket[] = [
       'ARC-AGI',
       'ARC-AGI-2',
       'WeirdML',
+      'MMLU-Pro',
     ],
   },
   {
     key: 'agentic',
     label: 'Agentic & Tools',
-    benchmarks: ['Terminal-Bench', 'APEX', 'METR task horizon', 'GDPval (win/tie rate)'],
+    benchmarks: ['Terminal-Bench', 'APEX', 'METR task horizon', 'GDPval (win/tie rate)', 'τ²-bench'],
   },
 ]
 

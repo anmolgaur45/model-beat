@@ -282,6 +282,71 @@ def _join_modalities(mods) -> str | None:
     return ", ".join(str(x) for x in mods) or None
 
 
+def split_or_name(raw: str | None) -> tuple[str | None, str | None]:
+    """OpenRouter display name 'Anthropic: Claude Sonnet 5' → (vendor, name)."""
+    if not raw:
+        return None, None
+    if ": " in raw:
+        vendor, name = raw.split(": ", 1)
+        return (vendor.strip() or None), (name.strip() or None)
+    return None, (raw.strip() or None)
+
+
+def openrouter_new_model_rows(catalog: dict, existing_keys: set[str], days: int) -> list[dict]:
+    """OpenRouter catalog entries released within `days` and not already in the
+    registry → new-model insert rows. Bounds the auto-create to genuinely fresh,
+    Epoch-missing releases (not OpenRouter's whole back-catalogue). Pure/testable."""
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    rows: list[dict] = []
+    seen_slugs: set[str] = set()
+    for key, rec in catalog.items():
+        if key in existing_keys:
+            continue
+        created = rec.get("created")
+        if not isinstance(created, (int, float)):
+            continue
+        try:
+            released = datetime.fromtimestamp(created, tz=timezone.utc)
+        except (OverflowError, OSError, ValueError):
+            continue
+        if released < cutoff:
+            continue
+        vendor, name = split_or_name(rec.get("name"))
+        if not name:
+            continue
+        # Curation: keep this an LLM tracker. Skip image/audio-gen models (any
+        # image output, or no text output), OpenRouter's own router meta-model,
+        # and alias/serving variants ('-latest', '(Fast)', '(free)', '(preview)')
+        # that duplicate a real model.
+        out_mods = (rec.get("output_modalities") or "").lower()
+        if "image" in out_mods or (out_mods and "text" not in out_mods):
+            continue
+        if (vendor or "").lower() == "openrouter":
+            continue
+        low = name.lower()
+        if "latest" in low or "(fast)" in low or "(free)" in low or "(preview)" in low:
+            continue
+        slug = slugify(name)
+        if slug in seen_slugs:
+            continue
+        seen_slugs.add(slug)
+        rows.append({
+            "slug": slug,
+            "name": name,
+            "vendor": vendor,
+            "family": derive_family(name),
+            "released_at": released.date().isoformat(),
+            "openrouter_id": rec.get("openrouter_id"),
+            "price_in": rec.get("price_in"),
+            "price_out": rec.get("price_out"),
+            "context_window": rec.get("context_window"),
+            "input_modalities": rec.get("input_modalities"),
+            "output_modalities": rec.get("output_modalities"),
+            "description": rec.get("description"),
+        })
+    return rows
+
+
 def parse_openrouter_models(data: list[dict]) -> dict[str, dict]:
     """OpenRouter `/models` data → {join_key: pricing/spec record}.
 
@@ -298,6 +363,8 @@ def parse_openrouter_models(data: list[dict]) -> dict[str, dict]:
         arch = m.get("architecture") or {}
         rec = {
             "openrouter_id": m.get("id"),
+            "name": m.get("name"),
+            "created": m.get("created"),
             "price_in": _price_per_million(pricing.get("prompt")),
             "price_out": _price_per_million(pricing.get("completion")),
             "context_window": m.get("context_length") or None,
@@ -319,6 +386,55 @@ def _cheaper_in(a: dict, b: dict) -> bool:
     if pb is None:
         return True
     return pa < pb
+
+
+# Artificial Analysis `evaluations` field → our benchmark (display name, unit).
+# Scores arrive as 0–1 fractions, matching our '%' storage. The first three
+# overlap Epoch (AA only fills them when Epoch is missing); the last four are
+# AA-owned benchmarks we don't get from Epoch.
+_AA_BENCHMARKS: dict[str, tuple[str, str]] = {
+    "gpqa":          ("GPQA Diamond", "%"),
+    "hle":           ("Humanity's Last Exam", "%"),
+    "aime_25":       ("AIME 2024/2025", "%"),
+    "tau2":          ("τ²-bench", "%"),
+    "livecodebench": ("LiveCodeBench", "%"),
+    "scicode":       ("SciCode", "%"),
+    "mmlu_pro":      ("MMLU-Pro", "%"),
+}
+_AA_PAREN_RE = re.compile(r"\s*\([^)]*\)")
+
+
+def aa_base_key(name: str) -> str:
+    """AA model name → join key, stripping a reasoning-effort suffix like '(high)'
+    so all variants of one model collapse to the registry's clean name."""
+    return normalize_key(_AA_PAREN_RE.sub("", name or ""))
+
+
+def parse_aa_models(data: list[dict]) -> dict[str, dict]:
+    """AA `/data/llms/models` → {base_key: {our_benchmark: (score, unit)}}.
+
+    Collapses reasoning-effort variants to the strongest (highest AA intelligence
+    index), so one representative score per model. Pure and unit-testable.
+    """
+    best_ii: dict[str, float] = {}
+    out: dict[str, dict] = {}
+    for m in data:
+        key = aa_base_key(m.get("name") or m.get("slug") or "")
+        if not key:
+            continue
+        ev = m.get("evaluations") or {}
+        ii = ev.get("artificial_analysis_intelligence_index")
+        ii = float(ii) if isinstance(ii, (int, float)) else -1.0
+        if key in best_ii and ii <= best_ii[key]:
+            continue
+        best_ii[key] = ii
+        scores: dict[str, tuple[float, str]] = {}
+        for field, (disp, unit) in _AA_BENCHMARKS.items():
+            v = ev.get(field)
+            if isinstance(v, (int, float)):
+                scores[disp] = (float(v), unit)
+        out[key] = scores
+    return out
 
 
 def build_version_alias(raw: bytes) -> dict[str, str]:
@@ -401,10 +517,10 @@ def match_models(text: str, aliases: dict[str, str]) -> list[str]:
 
 # ── Network fetch (fault-isolated) ─────────────────────────────────────────────
 
-def _fetch(url: str, *, as_bytes: bool):
+def _fetch(url: str, *, as_bytes: bool, headers: dict | None = None):
     try:
         with httpx.Client(timeout=_HTTP_TIMEOUT, follow_redirects=True) as client:
-            resp = client.get(url)
+            resp = client.get(url, headers=headers or {})
             resp.raise_for_status()
             return resp.content if as_bytes else resp.text
     except Exception as exc:
@@ -486,13 +602,96 @@ def sync_models(conn: psycopg.Connection) -> int:
             conn.commit()
             count += 1
         except psycopg.errors.UniqueViolation:
-            conn.rollback()  # slug collides with a different epoch_key — skip
-            log.warning("models.slug_collision", slug=r["slug"], name=r["name"])
+            conn.rollback()
+            # The slug is taken. If it's an auto-created OpenRouter row (no
+            # epoch_key yet), adopt it into Epoch — set the key + authoritative
+            # metadata so future benchmark syncs attach. Otherwise it's a genuine
+            # slug clash between two Epoch models; skip as before.
+            try:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        UPDATE models SET
+                            epoch_key      = %(epoch_key)s,
+                            name           = %(name)s,
+                            vendor         = COALESCE(%(vendor)s, vendor),
+                            family         = COALESCE(%(family)s, family),
+                            released_at    = %(released_at)s,
+                            parameters     = COALESCE(%(parameters)s, parameters),
+                            accessibility  = COALESCE(%(accessibility)s, accessibility),
+                            is_open_weight = COALESCE(%(is_open_weight)s, is_open_weight),
+                            description    = COALESCE(%(description)s, description),
+                            primary_url    = COALESCE(%(primary_url)s, primary_url),
+                            updated_at     = NOW()
+                        WHERE slug = %(slug)s AND epoch_key IS NULL
+                        """,
+                        r,
+                    )
+                    adopted = cur.rowcount
+                conn.commit()
+                if adopted:
+                    count += 1
+                    log.info("models.adopted", slug=r["slug"], name=r["name"])
+                else:
+                    log.warning("models.slug_collision", slug=r["slug"], name=r["name"])
+            except Exception as exc:
+                conn.rollback()
+                log.warning("models.adopt_failed", slug=r["slug"], error=str(exc))
         except Exception as exc:
             conn.rollback()
             log.warning("models.upsert_failed", name=r["name"], error=str(exc))
 
     log.info("models.synced", count=count)
+    return count
+
+
+def create_missing_models(conn: psycopg.Connection) -> int:
+    """Seed registry rows for fresh OpenRouter models Epoch hasn't scored yet, so
+    a release like Claude Sonnet 5 appears the day it ships. Epoch adopts the row
+    (attaches its key + scores) once it publishes; AA fills benchmarks meanwhile."""
+    raw = _fetch(settings.openrouter_models_url, as_bytes=False)
+    if raw is None:
+        return 0
+    try:
+        catalog = parse_openrouter_models(json.loads(raw).get("data", []))
+    except Exception as exc:
+        log.warning("models.create_parse_failed", error=str(exc))
+        return 0
+    if not catalog:
+        return 0
+
+    with conn.cursor() as cur:
+        cur.execute("SELECT epoch_key, name, slug FROM models")
+        existing = cur.fetchall()
+    existing_keys = {normalize_key(k or n) for (k, n, _s) in existing}
+    existing_slugs = {s for (_k, _n, s) in existing}
+
+    rows = openrouter_new_model_rows(catalog, existing_keys, settings.openrouter_new_model_days)
+    count = 0
+    for r in rows:
+        if r["slug"] in existing_slugs:
+            continue
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO models
+                        (slug, name, vendor, family, released_at, openrouter_id,
+                         price_in, price_out, context_window, input_modalities,
+                         output_modalities, description)
+                    VALUES (%(slug)s, %(name)s, %(vendor)s, %(family)s, %(released_at)s,
+                            %(openrouter_id)s, %(price_in)s, %(price_out)s, %(context_window)s,
+                            %(input_modalities)s, %(output_modalities)s, %(description)s)
+                    ON CONFLICT (slug) DO NOTHING
+                    """,
+                    r,
+                )
+            conn.commit()
+            count += 1
+        except Exception as exc:
+            conn.rollback()
+            log.warning("models.create_failed", slug=r.get("slug"), error=str(exc))
+    log.info("models.created", count=count)
     return count
 
 
@@ -524,10 +723,10 @@ def sync_benchmarks(conn: psycopg.Connection) -> int:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    INSERT INTO model_benchmarks (model_id, benchmark, score, unit)
-                    VALUES (%s, %s, %s, %s)
+                    INSERT INTO model_benchmarks (model_id, benchmark, score, unit, source)
+                    VALUES (%s, %s, %s, %s, 'epoch')
                     ON CONFLICT (model_id, benchmark) DO UPDATE SET
-                        score = EXCLUDED.score, unit = EXCLUDED.unit
+                        score = EXCLUDED.score, unit = EXCLUDED.unit, source = 'epoch'
                     """,
                     (model_id, benchmark, score, unit),
                 )
@@ -587,6 +786,56 @@ def sync_pricing(conn: psycopg.Connection) -> int:
             log.warning("pricing.update_failed", name=name, error=str(exc))
 
     log.info("pricing.synced", count=count)
+    return count
+
+
+def sync_aa_benchmarks(conn: psycopg.Connection) -> int:
+    """Fill benchmark scores from Artificial Analysis's free API for models Epoch
+    hasn't scored yet, plus the AA-owned benchmarks (τ²-bench, LiveCodeBench,
+    SciCode, MMLU-Pro). Epoch stays authoritative: the source guard never lets AA
+    overwrite an 'epoch' row. Skipped when no key is configured."""
+    if not settings.aa_api_key:
+        return 0
+    raw = _fetch(settings.aa_api_url, as_bytes=False, headers={"x-api-key": settings.aa_api_key})
+    if raw is None:
+        return 0
+    try:
+        catalog = parse_aa_models(json.loads(raw).get("data", []))
+    except Exception as exc:
+        log.warning("aa.parse_failed", error=str(exc))
+        return 0
+    if not catalog:
+        return 0
+
+    with conn.cursor() as cur:
+        cur.execute("SELECT id, epoch_key, name FROM models")
+        rows = cur.fetchall()
+
+    count = 0
+    for model_id, epoch_key, name in rows:
+        scores = catalog.get(normalize_key(epoch_key or name))
+        if not scores:
+            continue
+        for benchmark, (score, unit) in scores.items():
+            try:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        INSERT INTO model_benchmarks (model_id, benchmark, score, unit, source)
+                        VALUES (%s, %s, %s, %s, 'aa')
+                        ON CONFLICT (model_id, benchmark) DO UPDATE SET
+                            score = EXCLUDED.score, unit = EXCLUDED.unit, source = 'aa'
+                        WHERE model_benchmarks.source <> 'epoch'
+                        """,
+                        (model_id, benchmark, score, unit),
+                    )
+                conn.commit()
+                count += 1
+            except Exception as exc:
+                conn.rollback()
+                log.warning("aa.upsert_failed", error=str(exc))
+
+    log.info("aa.synced", count=count)
     return count
 
 

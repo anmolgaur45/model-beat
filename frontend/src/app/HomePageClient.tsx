@@ -202,14 +202,14 @@ export default function HomePageClient({ initialDate, initialClusters, initialTo
         }}
       />
 
-      {/* Stack Watch waitlist promo (dismissible) */}
-      <WaitlistBanner />
-
       {/* Ticker — thin live "wire" strip pinned at the top */}
       {timelineMode && <Ticker stories={topStories ?? []} />}
 
       {/* Model-intelligence band — leads the content with the tracker/compare wedge */}
       {timelineMode && <HeroModelBand models={initialTopModels} />}
+
+      {/* Stack Watch early-access promo (dismissible) — flows from the band */}
+      <WaitlistBanner />
 
       {/* Hero — date heading + category pills */}
       {timelineMode && (

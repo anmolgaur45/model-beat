@@ -44,6 +44,7 @@ export interface ModelBenchmark {
   score: number // native scale (fraction for %, raw value for index)
   unit: string // '%' | 'index' | 'elo' | 'min'
   percentile?: number | null // rank vs all last-year models (Phase O4); 0–100
+  source?: string // 'epoch' | 'aa' — which dataset the score came from
 }
 
 export interface Model {

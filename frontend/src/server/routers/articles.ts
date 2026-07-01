@@ -539,7 +539,7 @@ export const articlesRouter = router({
       if (!model) return null
 
       const benchmarks = await sql<ModelBenchmark[]>`
-        SELECT benchmark, score, unit FROM model_benchmarks
+        SELECT benchmark, score, unit, source FROM model_benchmarks
         WHERE model_id = ${model.id}
         ORDER BY (unit = 'index') DESC, benchmark
       `

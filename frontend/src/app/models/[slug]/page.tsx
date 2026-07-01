@@ -190,6 +190,11 @@ function toView(model: ModelDetail): ModelView {
   const groups = GROUP_ORDER.filter((g) => byGroup.has(g)).map((g) => ({ name: GROUP_LABELS[g], rows: byGroup.get(g)! }))
 
   const src = sourceLink(model)
+  // Attribute the gauge scores to the primary dataset. A brand-new model can be
+  // entirely Artificial Analysis until Epoch scores it; established models are
+  // Epoch-primary (AA supplements them, and the footer credits both).
+  const hasEpoch = model.benchmarks.some((b) => (b.source ?? 'epoch') === 'epoch')
+  const providerLabel = hasEpoch ? 'Epoch AI' : 'Artificial Analysis'
   return {
     org: model.vendor ?? '',
     name: model.name,
@@ -202,7 +207,7 @@ function toView(model: ModelDetail): ModelView {
     priceOut: usd(model.price_out),
     context: fmtContext(model.context_window),
     released: fmtReleased(model.released_at),
-    providers: model.benchmarks.length > 0 ? ['Epoch AI'] : [],
+    providers: model.benchmarks.length > 0 ? [providerLabel] : [],
     indices,
     groups,
     sourceUrl: src.url,

@@ -493,13 +493,30 @@ def parse_benchmark_zip(
     return best
 
 
+# Brand umbrellas the press routinely drops: "Claude Fable 5" is reported as
+# "Fable 5". Gemini/GPT names carry no such redundant prefix (the first word IS
+# the identity), so only these are stripped.
+_ALIAS_UMBRELLA_PREFIXES = ("claude ",)
+
+
 def build_alias_index(models: list[tuple[str, str]]) -> dict[str, str]:
-    """From (model_id, name) rows → {alias_lower: model_id} for news matching."""
+    """From (model_id, name) rows → {alias_lower: model_id} for news matching.
+
+    Registers the full name plus the umbrella-stripped short name news actually
+    uses ("Claude Fable 5" → "Fable 5"). The short form is kept only when it is
+    still specific — at least 4 chars and carrying a version digit — so bare
+    family words ("Haiku", "Opus") can't match unrelated prose.
+    """
     aliases: dict[str, str] = {}
     for model_id, name in models:
         low = (name or "").strip().lower()
         if len(low) >= 4:
             aliases.setdefault(low, model_id)
+        for prefix in _ALIAS_UMBRELLA_PREFIXES:
+            if low.startswith(prefix):
+                short = low[len(prefix):].strip()
+                if len(short) >= 4 and any(ch.isdigit() for ch in short):
+                    aliases.setdefault(short, model_id)
     return aliases
 
 
@@ -840,7 +857,14 @@ def sync_aa_benchmarks(conn: psycopg.Connection) -> int:
 
 
 def link_model_coverage(conn: psycopg.Connection) -> int:
-    """Link recent model-releases clusters to a registry model by name match."""
+    """Link recent clusters to a registry model by name match.
+
+    Model-releases clusters link at any score. Other categories link only when
+    significant (>= model_link_min_significance), so a tracked model's major
+    non-launch news — a ban, an access or price change — reaches its page, while
+    low-signal mentions and uncategorized noise stay off it. The headline
+    name-match (match_models) is the precision gate in every case.
+    """
     with conn.cursor() as cur:
         cur.execute("SELECT id, name FROM models")
         aliases = build_alias_index([(str(mid), name) for (mid, name) in cur.fetchall()])
@@ -852,11 +876,13 @@ def link_model_coverage(conn: psycopg.Connection) -> int:
             """
             SELECT c.id, c.headline, c.significance_score
             FROM clusters c
-            WHERE c.category = 'model-releases'
-              AND c.first_published_at >= now() - make_interval(days => %s)
+            WHERE c.first_published_at >= now() - make_interval(days => %s)
+              AND c.category <> 'uncategorized'
+              AND (c.category = 'model-releases'
+                   OR c.significance_score >= %s)
               AND NOT EXISTS (SELECT 1 FROM model_clusters mc WHERE mc.cluster_id = c.id)
             """,
-            (settings.model_roster_days,),
+            (settings.model_roster_days, settings.model_link_min_significance),
         )
         clusters = cur.fetchall()
 

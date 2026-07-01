@@ -20,6 +20,13 @@ class Settings(BaseSettings):
     # so they only cluster as near-duplicates
     cluster_arxiv_threshold: float = 0.10
     cluster_window_hours: int = 48
+    # Two-stage merge (fragmentation fix): the greedy embedding join and the 0.30
+    # centroid merge leave same-event clusters whose short headlines embed just
+    # past 0.30 apart (e.g. "US lifts export controls on Fable" vs "Commerce Dept
+    # green-lights Fable return") as separate low-scoring fragments. Cluster pairs
+    # in the [0.30, this] band are handed to Haiku, which merges only genuine
+    # same-event pairs — recall without loosening the global false-merge guard.
+    cluster_merge_high_threshold: float = 0.45
 
     # Cap new articles processed per run. The daily arXiv dump (~600 papers, all
     # landing in one run) otherwise pushes clustering past the 30-min Cloud Run
@@ -44,6 +51,11 @@ class Settings(BaseSettings):
     # tracker of models released in the last `model_roster_days`, with benchmark
     # scores. No LLM, no paid API — just two cheap CSV/zip fetches per run.
     model_roster_days: int = 365
+    # A tracked model's biggest news is often not a launch (a ban, an access or
+    # price change). link_model_coverage links model-releases clusters at any
+    # score, plus any other-category cluster at or above this significance whose
+    # headline names a tracked model — so major non-launch news reaches the page.
+    model_link_min_significance: float = 5.0
     epoch_models_url: str = "https://epoch.ai/data/notable_ai_models.csv"
     epoch_benchmark_url: str = "https://epoch.ai/data/benchmark_data.zip"
     # Pricing & specs (Phase O1) from OpenRouter's public, no-auth model catalog.

@@ -3,8 +3,10 @@ from datetime import datetime, timezone
 import numpy as np
 
 from ainews.processing.clustering import (
+    _adjudicate_same_event,
     _coverage_multiplier,
     _weighted_base,
+    ambiguous_pairs,
     compute_merge_groups,
     effective_threshold,
     normalize_score,
@@ -168,3 +170,57 @@ def test_no_groups_when_all_distinct():
     v_opp = np.array([-1.0, 0.0], dtype=np.float32)
     groups = compute_merge_groups([VA, v_orth, v_opp], [0, 0, 0], [False] * 3, 0.30, WINDOW_S)
     assert groups == []
+
+
+def test_extra_edges_union_a_non_threshold_pair():
+    # A and FAR are 0.40 apart — no threshold merge; the adjudicated edge forces it
+    assert compute_merge_groups([VA, VFAR], [0, 0], [False, False], 0.30, WINDOW_S) == []
+    groups = compute_merge_groups(
+        [VA, VFAR], [0, 0], [False, False], 0.30, WINDOW_S, extra_edges=[(0, 1)]
+    )
+    assert groups == [[0, 1]]
+
+
+def test_extra_edges_bridge_into_threshold_group():
+    # A-B merge by threshold (0.20); an adjudicated B-orth edge pulls orth (0.40
+    # from B, 1.0 from A — neither a threshold merge) into the same group.
+    v_orth = np.array([0.0, 1.0], dtype=np.float32)
+    assert compute_merge_groups([VA, VB, v_orth], [0, 0, 0], [False] * 3, 0.30, WINDOW_S) == [[0, 1]]
+    groups = compute_merge_groups(
+        [VA, VB, v_orth], [0, 0, 0], [False] * 3, 0.30, WINDOW_S, extra_edges=[(1, 2)]
+    )
+    assert len(groups) == 1
+    assert sorted(groups[0]) == [0, 1, 2]
+
+
+# ── ambiguous_pairs ─────────────────────────────────────────────────────────
+
+def test_ambiguous_pairs_returns_only_the_band():
+    # A-FAR is 0.40 (in [0.30, 0.45)); A-B is 0.20 and B-FAR is 0.04 (both below low)
+    pairs = ambiguous_pairs([VA, VB, VFAR], [0, 0, 0], [False] * 3, 0.30, 0.45, WINDOW_S)
+    assert pairs == [(0, 2)]
+
+
+def test_ambiguous_pairs_excludes_confident_and_far():
+    # VNEAR ~0.05 from A (below low) — nothing in the band
+    assert ambiguous_pairs([VA, VNEAR], [0, 0], [False, False], 0.30, 0.45, WINDOW_S) == []
+    # VC 0.72 from A (at/above high) — nothing in the band
+    assert ambiguous_pairs([VA, VC], [0, 0], [False, False], 0.30, 0.45, WINDOW_S) == []
+
+
+def test_ambiguous_pairs_skips_arxiv_and_out_of_window():
+    assert ambiguous_pairs([VA, VFAR], [0, 0], [True, False], 0.30, 0.45, WINDOW_S) == []
+    assert ambiguous_pairs([VA, VFAR], [0, 100 * 3600], [False, False], 0.30, 0.45, WINDOW_S) == []
+
+
+# ── _adjudicate_same_event (fails closed) ────────────────────────────────────
+
+def test_adjudicate_empty_returns_empty():
+    assert _adjudicate_same_event([]) == []
+
+
+def test_adjudicate_fails_closed_without_key(monkeypatch):
+    from ainews.processing import clustering
+
+    monkeypatch.setattr(clustering.settings, "anthropic_api_key", "")
+    assert _adjudicate_same_event([("a", "b"), ("c", "d")]) == [False, False]

@@ -209,6 +209,21 @@ def test_build_alias_index_skips_short_names():
     assert aliases == {}
 
 
+def test_build_alias_index_matches_umbrella_stripped_short_name():
+    # News says "Fable 5", not the registry's "Claude Fable 5"
+    aliases = build_alias_index([("id-1", "Claude Fable 5")])
+    assert match_models("Anthropic Says US Lifted Restrictions on Fable 5", aliases) == ["id-1"]
+    # the full name still matches too
+    assert match_models("Claude Fable 5 is back worldwide", aliases) == ["id-1"]
+
+
+def test_build_alias_index_short_name_requires_a_version_digit():
+    # bare family words must not become aliases (would match unrelated prose)
+    aliases = build_alias_index([("id-1", "Claude Haiku")])
+    assert "haiku" not in aliases
+    assert match_models("She wrote a haiku about the sea", aliases) == []
+
+
 # ── ECI roster supplement (models missing from the notable CSV) ────────────────
 
 def test_accessibility_to_open_weight():

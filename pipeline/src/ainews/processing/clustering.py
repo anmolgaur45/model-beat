@@ -1,3 +1,4 @@
+import json
 import math
 import uuid
 from collections import Counter
@@ -6,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 import numpy as np
 import psycopg
 import structlog
+from anthropic import Anthropic
 
 from ..config import settings
 from ..sources import get_organization
@@ -225,6 +227,7 @@ def compute_merge_groups(
     arxiv: list[bool],
     news_threshold: float,
     window_s: float,
+    extra_edges: list[tuple[int, int]] | None = None,
 ) -> list[list[int]]:
     """Union-find over cluster centroids — groups clusters that are the same story.
 
@@ -232,6 +235,9 @@ def compute_merge_groups(
     they fall within the time window. Pairs where BOTH clusters are arXiv-dominant
     use the tight arXiv threshold, so distinct same-subfield papers are not
     re-blobbed; a paper + its news coverage still merge at the news threshold.
+    `extra_edges` are additional (i, j) index pairs to union unconditionally —
+    the same-event pairs an LLM confirmed in the ambiguous band (fragmentation
+    fix); they are already window- and arXiv-filtered by `ambiguous_pairs`.
     Returns index groups of size >= 2 only.
     """
     k = len(centroids)
@@ -248,20 +254,115 @@ def compute_merge_groups(
             x = parent[x]
         return x
 
+    def union(a: int, b: int) -> None:
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            parent[ra] = rb
+
     for i in range(k):
         for j in range(i + 1, k):
             if abs(times[i] - times[j]) > window_s:
                 continue
             thr = settings.cluster_arxiv_threshold if (arxiv[i] and arxiv[j]) else news_threshold
             if dist[i, j] < thr:
-                ri, rj = find(i), find(j)
-                if ri != rj:
-                    parent[ri] = rj
+                union(i, j)
+
+    for i, j in extra_edges or []:
+        union(i, j)
 
     groups: dict[int, list[int]] = {}
     for i in range(k):
         groups.setdefault(find(i), []).append(i)
     return [g for g in groups.values() if len(g) >= 2]
+
+
+def ambiguous_pairs(
+    centroids: list[np.ndarray],
+    times: list[float],
+    arxiv: list[bool],
+    low_threshold: float,
+    high_threshold: float,
+    window_s: float,
+) -> list[tuple[int, int]]:
+    """Cluster index pairs in the [low, high) centroid-distance band, in the time
+    window — the fragmentation dead zone the LLM adjudicates.
+
+    Pairs already below `low` merge automatically; pairs at/above `high` are too
+    far apart to be the same event. arXiv-touching pairs are skipped (papers stay
+    on the tight near-dupe threshold). Sorted closest-first so a per-run cap keeps
+    the most likely duplicates.
+    """
+    k = len(centroids)
+    if k < 2:
+        return []
+    mat = np.stack([c / max(float(np.linalg.norm(c)), 1e-9) for c in centroids])
+    dist = 1.0 - mat @ mat.T
+
+    cand: list[tuple[float, int, int]] = []
+    for i in range(k):
+        for j in range(i + 1, k):
+            if abs(times[i] - times[j]) > window_s:
+                continue
+            if arxiv[i] or arxiv[j]:
+                continue
+            d = float(dist[i, j])
+            if low_threshold <= d < high_threshold:
+                cand.append((d, i, j))
+    cand.sort()
+    return [(i, j) for _, i, j in cand]
+
+
+_ADJUDICATE_PROMPT = """\
+You are deduplicating an AI-news feed. For each numbered pair of headlines, decide \
+whether BOTH headlines report the SAME underlying news event — the same announcement or \
+development — not merely the same topic, company, or model.
+
+SAME event: two outlets covering one announcement, even with very different wording.
+DIFFERENT event: the same company or model but distinct developments (a launch vs. a later \
+price change vs. a benchmark result vs. a competitor's response vs. a regulatory action).
+DIFFERENT event: two independent opinion, analysis, or think-pieces on the same broad theme \
+that are not tied to one specific announcement — shared topic is not a shared event.
+
+Pairs:
+{pairs}
+
+Respond with a JSON array only, no markdown, one object per pair in the same order:
+[{{"pair": <number>, "same": true|false}}, ...]"""
+
+_MAX_ADJUDICATE_PAIRS = 60
+
+
+def _adjudicate_same_event(headline_pairs: list[tuple[str, str]]) -> list[bool]:
+    """Ask Haiku which headline pairs describe the same news event.
+
+    Returns one bool per input pair. Fails closed (all False) on a missing key or
+    any error, so the adjudicator can only ever add merges the LLM affirmed — it
+    never widens the false-merge surface the 0.30 threshold guards.
+    """
+    if not headline_pairs:
+        return []
+    if not settings.anthropic_api_key:
+        return [False] * len(headline_pairs)
+
+    lines = [f'{n}. A: "{a}"\n   B: "{b}"' for n, (a, b) in enumerate(headline_pairs, 1)]
+    prompt = _ADJUDICATE_PROMPT.format(pairs="\n".join(lines))
+    try:
+        client = Anthropic(api_key=settings.anthropic_api_key)
+        response = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=1024,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        raw = response.content[0].text.strip()
+        if raw.startswith("```"):
+            parts = raw.split("```")
+            raw = parts[1].lstrip("json").strip() if len(parts) > 1 else raw
+        verdict = {int(r["pair"]): bool(r["same"]) for r in json.loads(raw)}
+    except Exception as exc:
+        log.warning("clustering.adjudicate_failed", error=str(exc))
+        return [False] * len(headline_pairs)
+
+    return [verdict.get(n, False) for n in range(1, len(headline_pairs) + 1)]
 
 
 def merge_close_clusters(
@@ -279,10 +380,12 @@ def merge_close_clusters(
     cutoff = datetime.now(timezone.utc) - timedelta(days=_BACKFILL_DAYS)
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT id, first_published_at FROM clusters WHERE first_published_at >= %s",
+            "SELECT id, first_published_at, headline FROM clusters WHERE first_published_at >= %s",
             (cutoff,),
         )
-        meta = {str(r[0]): r[1] for r in cur.fetchall()}
+        cluster_rows = cur.fetchall()
+    meta = {str(r[0]): r[1] for r in cluster_rows}
+    headlines = {str(r[0]): (r[2] or "") for r in cluster_rows}
     if len(meta) < 2:
         return set()
 
@@ -313,9 +416,22 @@ def merge_close_clusters(
     times = [meta[cid].timestamp() for cid in order]
     arxiv_dom = [agg[cid]["arxiv"] * 2 > agg[cid]["n"] for cid in order]
     sizes = {cid: agg[cid]["n"] for cid in order}
+    window_s = window_hours * 3600
+
+    # Stage 2 — LLM adjudicates same-event pairs the embeddings left just past the
+    # 0.30 merge threshold (the fragmentation dead zone). Only borderline pairs in
+    # the window reach Haiku, closest-first and capped, so cost stays trivial.
+    amb = ambiguous_pairs(
+        centroids, times, arxiv_dom,
+        news_threshold, settings.cluster_merge_high_threshold, window_s,
+    )[:_MAX_ADJUDICATE_PAIRS]
+    verdicts = _adjudicate_same_event([(headlines[order[i]], headlines[order[j]]) for i, j in amb])
+    extra_edges = [amb[k] for k, same in enumerate(verdicts) if same]
+    if amb:
+        log.info("clustering.adjudicated", candidates=len(amb), confirmed=len(extra_edges))
 
     groups = compute_merge_groups(
-        centroids, times, arxiv_dom, news_threshold, window_hours * 3600
+        centroids, times, arxiv_dom, news_threshold, window_s, extra_edges=extra_edges
     )
     if not groups:
         return set()

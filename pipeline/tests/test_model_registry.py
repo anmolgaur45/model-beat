@@ -19,6 +19,10 @@ from ainews.processing.model_registry import (
     match_models,
     openrouter_key,
     parse_openrouter_models,
+    split_or_name,
+    openrouter_new_model_rows,
+    parse_aa_models,
+    aa_base_key,
 )
 
 
@@ -333,17 +337,8 @@ def test_parse_openrouter_models_prefers_cheapest_nonzero_variant():
 
 # ── Phase O5: OpenRouter auto-create + AA benchmark ingest ──────────────────────
 
-from datetime import datetime, timedelta, timezone as _tz
-from ainews.processing.model_registry import (
-    split_or_name,
-    openrouter_new_model_rows,
-    parse_aa_models,
-    aa_base_key,
-)
-
-
 def _ts(days_ago: int) -> int:
-    return int((datetime.now(_tz.utc) - timedelta(days=days_ago)).timestamp())
+    return int((datetime.now(timezone.utc) - timedelta(days=days_ago)).timestamp())
 
 
 def test_split_or_name_separates_vendor():

@@ -98,3 +98,8 @@ spec:
                     secretKeyRef:
                       name: ainews-cron-secret
                       key: "1"
+                - name: AA_API_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: aa-api-key
+                      key: "latest"

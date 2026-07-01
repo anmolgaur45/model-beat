@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 type Status = 'idle' | 'submitting' | 'success' | 'error'
 
@@ -10,6 +10,19 @@ export function WaitlistForm({ source = 'stack-watch' }: { source?: string }) {
   const [website, setWebsite] = useState('') // honeypot
   const [status, setStatus] = useState<Status>('idle')
   const [error, setError] = useState('')
+  // When arriving from a model page's "Watch this model" CTA (/stack-watch?model=…),
+  // prefill which model they want watched and tag the signup so we can tell the
+  // model-page funnel apart from the generic landing. Read client-side so the
+  // page itself stays statically prerendered.
+  const [effectiveSource, setEffectiveSource] = useState(source)
+
+  useEffect(() => {
+    const model = new URLSearchParams(window.location.search).get('model')
+    if (model) {
+      setStack((s) => s || model.slice(0, 120))
+      setEffectiveSource('watch-model')
+    }
+  }, [])
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
@@ -20,7 +33,7 @@ export function WaitlistForm({ source = 'stack-watch' }: { source?: string }) {
       const res = await fetch('/api/waitlist', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, stack, website, source }),
+        body: JSON.stringify({ email, stack, website, source: effectiveSource }),
       })
       if (res.ok) {
         setStatus('success')

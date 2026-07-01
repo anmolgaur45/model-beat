@@ -77,6 +77,21 @@ export default function StackWatchPage() {
         </div>
 
         <section className="anc-sw-cta">
+          <div className="anc-sw-sample" role="img" aria-label="Example Stack Watch alert">
+            <span className="anc-sw-sample-flag">Example alert</span>
+            <div className="anc-sw-sample-card">
+              <div className="anc-sw-sample-head">
+                <span className="anc-sw-tag">Deprecation</span>
+                <span className="anc-sw-sample-model">GPT-5.5</span>
+              </div>
+              <p className="anc-sw-sample-title">OpenAI is retiring GPT-5.5 on August 1.</p>
+              <p className="anc-sw-sample-text">
+                You have about 6 weeks to migrate. Here are 3 models at similar quality and the same
+                or lower price, ready to compare.
+              </p>
+            </div>
+          </div>
+
           <h2>Want in?</h2>
           <p>
             Stack Watch isn’t live yet. I’m building it on top of Model Beat’s model and news tracking.

@@ -180,6 +180,10 @@ export function ModelTelemetry({ view: M }: { view: ModelView }) {
             <div className="m2-titlerow">
               <h1 className="m2-name">{M.org ? `${M.org}: ${M.name}` : M.name}</h1>
               <div className="m2-actions">
+                <Link className="m2-btn watch" href={`/stack-watch?model=${encodeURIComponent(M.name)}`}>
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 1.8a3.4 3.4 0 0 0-3.4 3.4c0 3.2-1.3 4.4-1.3 4.4h9.4s-1.3-1.2-1.3-4.4A3.4 3.4 0 0 0 8 1.8zM6.6 12.2a1.5 1.5 0 0 0 2.8 0" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                  Watch this model
+                </Link>
                 <Link className="m2-btn primary" href={`/models/compare?ids=${M.modelSlug}`}>
                   <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="2" y="2.5" width="12" height="11" rx="2" stroke="currentColor" strokeWidth="1.4" /><path d="M8 2.5v11" stroke="currentColor" strokeWidth="1.4" /></svg>
                   Compare

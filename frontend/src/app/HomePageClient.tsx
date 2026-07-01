@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
+import Link from 'next/link'
 import type { inferRouterOutputs } from '@trpc/server'
 import { trpc } from '@/lib/trpc'
 import type { AppRouter } from '@/server/routers/_app'
@@ -14,6 +15,7 @@ import { Recap } from '@/components/Recap'
 import { NavBar } from '@/components/NavBar'
 import { Ticker } from '@/components/Ticker'
 import { WaitlistBanner } from '@/components/WaitlistBanner'
+import { HeroModelBand, type TopModel } from '@/components/HeroModelBand'
 import { CATEGORY_LABELS } from '@/components/categoryMeta'
 
 // Exact router output shapes so initialData matches the query's data type.
@@ -26,6 +28,7 @@ interface Props {
   initialDate: string
   initialClusters: DayClusters
   initialTopStories: TopStories
+  initialTopModels: TopModel[]
 }
 
 function localISO(date: Date = new Date()): string {
@@ -69,7 +72,7 @@ function heroDateLabel(iso: string): { display: string; sub: string } {
   }
 }
 
-export default function HomePageClient({ initialDate, initialClusters, initialTopStories }: Props) {
+export default function HomePageClient({ initialDate, initialClusters, initialTopStories, initialTopModels }: Props) {
   // Start on the server's date so first client render matches the SSR HTML; a
   // post-mount effect nudges it to the visitor's local day if their timezone
   // has already rolled over (avoids a hydration mismatch).
@@ -202,8 +205,11 @@ export default function HomePageClient({ initialDate, initialClusters, initialTo
       {/* Stack Watch waitlist promo (dismissible) */}
       <WaitlistBanner />
 
-      {/* Ticker */}
+      {/* Ticker — thin live "wire" strip pinned at the top */}
       {timelineMode && <Ticker stories={topStories ?? []} />}
+
+      {/* Model-intelligence band — leads the content with the tracker/compare wedge */}
+      {timelineMode && <HeroModelBand models={initialTopModels} />}
 
       {/* Hero — date heading + category pills */}
       {timelineMode && (
@@ -221,6 +227,9 @@ export default function HomePageClient({ initialDate, initialClusters, initialTo
             <button className="anc-catchup" onClick={() => { setSearch(''); setRecapMode(true) }}>
               ⚡ Catch me up on the last {RECAP_DAYS} days
             </button>
+            <Link className="anc-hero-compare" href="/models/compare">
+              ⚖ Compare AI models →
+            </Link>
           </div>
           <CategoryFilter selected={selectedCategory} onChange={(c) => { setSelectedCategory(c) }} />
         </header>

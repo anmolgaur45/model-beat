@@ -12,6 +12,16 @@ const CATEGORY_VALUES = [
 const zCategory = z.enum(CATEGORY_VALUES).optional()
 const zDateStr = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional()
 
+// Lightweight related-story shape returned by getCluster for card links.
+export type RelatedStory = {
+  id: string
+  headline: string
+  category: string
+  significance_score: number
+  first_published_at: string
+  article_count: number
+}
+
 // Article columns to fetch — excludes the large embedding vector
 const ARTICLE_COLS = sql`id, title, body_excerpt, source_name, source_url, author, published_at, raw_category, cluster_id, impact_score, created_at`
 
@@ -310,7 +320,9 @@ export const articlesRouter = router({
           summary: null,
           created_at: article.created_at,
           articles: [article],
-        } as Cluster & { articles: Article[] }
+          models: [] as { slug: string; name: string }[],
+          related: [] as RelatedStory[],
+        }
       }
 
       const articles = await sql<Article[]>`
@@ -319,7 +331,42 @@ export const articlesRouter = router({
         ORDER BY significance_base DESC
       `
 
-      return { ...cluster, articles } as Cluster & { articles: Article[] }
+      // Models this story is about, for cross-linking to /models/[slug]. Cap 3.
+      const models = await sql<{ slug: string; name: string }[]>`
+        SELECT m.slug, m.name
+        FROM model_clusters mc
+        JOIN models m ON m.id = mc.model_id
+        WHERE mc.cluster_id = ${input.id}
+        ORDER BY m.released_at DESC NULLS LAST
+        LIMIT 3
+      `
+
+      // Related stories: first those sharing a model with this one; if none,
+      // same-category stories near in time. Lightweight shape for card links.
+      let related = await sql<RelatedStory[]>`
+        SELECT id, headline, category, significance_score, first_published_at, article_count
+        FROM clusters
+        WHERE id IN (
+          SELECT DISTINCT cluster_id FROM model_clusters
+          WHERE model_id IN (SELECT model_id FROM model_clusters WHERE cluster_id = ${input.id})
+            AND cluster_id <> ${input.id}
+        )
+        ORDER BY significance_score DESC, first_published_at DESC
+        LIMIT 4
+      `
+      if (related.length === 0) {
+        related = await sql<RelatedStory[]>`
+          SELECT id, headline, category, significance_score, first_published_at, article_count
+          FROM clusters
+          WHERE category = ${cluster.category} AND id <> ${input.id}
+            AND first_published_at BETWEEN ${cluster.first_published_at}::timestamptz - interval '4 days'
+              AND ${cluster.first_published_at}::timestamptz + interval '4 days'
+          ORDER BY significance_score DESC
+          LIMIT 4
+        `
+      }
+
+      return { ...cluster, articles, models, related }
     }),
 
   search: publicProcedure

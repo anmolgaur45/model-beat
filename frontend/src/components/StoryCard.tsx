@@ -8,6 +8,8 @@ import { ScoreBadge, type ScoreStyle } from './ScoreBadge'
 import { SourceBubble } from './SourceBubble'
 import { CATEGORY_LABELS } from './categoryMeta'
 import { timeAgo } from '@/lib/timeFormat'
+import { storyPath } from '@/lib/story'
+import { SharePopover } from './SharePopover'
 
 interface Props {
   cluster: Cluster & { articles: Article[] }
@@ -69,6 +71,8 @@ export function StoryCard({ cluster, showDate = false, scoreStyle = 'orb', highl
         </svg>
       </button>
 
+      <SharePopover headline={cluster.headline} summary={cluster.summary ?? null} path={storyPath(cluster)} className="anc-cshare" />
+
       {cluster.models && cluster.models.length > 0 && (
         <div className="anc-cmodels">
           <span className="anc-cmodels-label">Models</span>
@@ -111,6 +115,13 @@ export function StoryCard({ cluster, showDate = false, scoreStyle = 'orb', highl
                     </div>
                   ))}
                   <div className="anc-card-actions" style={{ marginTop: 8 }}>
+                    <Link
+                      className="anc-read anc-full"
+                      href={storyPath(cluster)}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      Open full story →
+                    </Link>
                     {primary && (
                       <a
                         className="anc-read"

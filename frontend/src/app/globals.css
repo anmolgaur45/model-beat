@@ -501,6 +501,67 @@ a.anc-tick:hover { color: var(--accent-text); }
 .anc-legal p { font-size: 15px; line-height: 1.65; color: var(--text2); margin: 12px 0 0; }
 .anc-legal a { color: var(--accent-text); text-decoration: underline; }
 
+/* ── Story permalink page ─────────────────────────────────────────────────── */
+.anc-story { max-width: 760px; margin: 0 auto; padding: 92px 24px 90px; position: relative; z-index: 2; }
+.anc-story-top { display: flex; align-items: center; gap: 10px; margin: 18px 0 0; }
+.anc-story-cat { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent-text); }
+.anc-story-dot { color: var(--text3); }
+.anc-story-time { font-size: 13px; color: var(--text3); }
+.anc-story-h1 { font-family: var(--font-display); font-weight: 800; font-size: clamp(28px, 4.4vw, 40px); letter-spacing: -0.02em; line-height: 1.12; margin: 12px 0 0; }
+.anc-story-sum { font-size: 16px; line-height: 1.65; color: var(--text2); margin: 18px 0 0; }
+
+.anc-story-models { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 22px 0 0; }
+.anc-story-models .lbl { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text3); }
+.anc-story-model { font-size: 13px; font-weight: 600; color: var(--accent-text); padding: 4px 11px; border-radius: 999px; border: 1px solid var(--accent-line); background: var(--accent-dim); }
+.anc-story-model:hover { border-color: var(--accent); }
+
+.anc-story-sources { margin: 34px 0 0; }
+.anc-story-sources h2, .anc-story-related h2 { font-family: var(--font-display); font-weight: 700; font-size: 15px; letter-spacing: -0.01em; margin: 0 0 12px; }
+.anc-story-sources ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.anc-story-sources li { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 10px; border: 1px solid transparent; }
+.anc-story-sources li:hover { border-color: var(--line); background: var(--bg-card); }
+.anc-story-sources .src { font-size: 14px; font-weight: 600; color: var(--text); display: inline-flex; align-items: center; gap: 5px; }
+.anc-story-sources .src:hover { color: var(--accent-text); }
+.anc-story-sources .src .ext { font-size: 11px; color: var(--text3); }
+.anc-story-sources .by { font-size: 12.5px; color: var(--text3); }
+.anc-story-sources .tm { margin-left: auto; font-size: 12.5px; color: var(--text3); white-space: nowrap; }
+
+.anc-story-related { margin: 40px 0 0; }
+.anc-story-relgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.anc-story-relcard { display: flex; flex-direction: column; gap: 6px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 13px; background: linear-gradient(180deg, var(--bg-card-strong), var(--bg-card)); }
+.anc-story-relcard:hover { border-color: var(--accent-line); }
+.anc-story-relcard .rc-cat { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent-text); }
+.anc-story-relcard .rc-head { font-size: 14px; font-weight: 650; line-height: 1.35; color: var(--text); }
+.anc-story-relcard .rc-meta { font-size: 12px; color: var(--text3); }
+
+/* Share controls (story page) */
+.anc-sharewrap { margin: 22px 0 0; }
+.anc-share { display: flex; gap: 8px; flex-wrap: wrap; }
+.anc-share-btn { display: inline-flex; align-items: center; height: 32px; padding: 0 14px; border-radius: 9px; border: 1px solid var(--line2); background: var(--bg-card-strong); color: var(--text2); font-size: 12.5px; font-weight: 550; cursor: pointer; transition: color 0.15s, border-color 0.15s; }
+.anc-share-btn:hover { color: var(--accent-text); border-color: var(--accent-line); }
+.anc-share-btn.copied { color: var(--accent-text); border-color: var(--accent-line); }
+.anc-share-note { font-size: 12.5px; color: var(--accent-text); margin: 9px 0 0; }
+
+.anc-read.anc-full { color: var(--accent-text); font-weight: 600; }
+
+/* Per-card share trigger (timeline) — hover-reveal on desktop, always on touch */
+.anc-cshare { position: absolute; top: 8px; right: 10px; z-index: 4; display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 27px; border-radius: 8px; border: 1px solid var(--line2); background: var(--bg-card-strong); color: var(--text3); opacity: 0; cursor: pointer; transition: opacity 0.15s, color 0.15s, border-color 0.15s; }
+.anc-card:hover .anc-cshare, .anc-cshare:focus-visible, .anc-cshare[aria-expanded="true"] { opacity: 1; }
+.anc-cshare:hover, .anc-cshare[aria-expanded="true"] { color: var(--accent-text); border-color: var(--accent-line); }
+@media (hover: none) { .anc-cshare { opacity: 1; } }
+
+/* Feature-card inline share trigger */
+.anc-fshare { display: inline-flex; align-items: center; gap: 6px; background: none; border: 0; padding: 0; color: var(--text3); font-size: 13px; font-weight: 550; cursor: pointer; font-family: inherit; white-space: nowrap; }
+.anc-fshare:hover, .anc-fshare[aria-expanded="true"] { color: var(--accent-text); }
+
+/* Shared share popover (portaled to body) */
+.anc-sharepop { position: fixed; z-index: 60; min-width: 190px; padding: 6px; border: 1px solid var(--line2); border-radius: 12px; background: linear-gradient(var(--bg-card-strong), var(--bg-card-strong)), var(--bg); box-shadow: 0 12px 34px rgba(0, 0, 0, 0.5); display: flex; flex-direction: column; gap: 2px; }
+.anc-sharepop-item { display: flex; align-items: center; text-align: left; width: 100%; padding: 8px 10px; border: 0; border-radius: 8px; background: none; color: var(--text2); font-size: 13px; font-weight: 550; cursor: pointer; font-family: inherit; }
+.anc-sharepop-item:hover { background: var(--bg-pill); color: var(--text); }
+.anc-sharepop-note { padding: 8px 10px 4px; font-size: 11.5px; color: var(--accent-text); line-height: 1.4; border-top: 1px solid var(--line); margin-top: 2px; }
+
+@media (max-width: 560px) { .anc-story-relgrid { grid-template-columns: 1fr; } }
+
 /* ── Waitlist form ───────────────────────────────────────────────────────── */
 .anc-wl-form { display: flex; flex-direction: column; gap: 10px; max-width: 460px; }
 .anc-wl-email, .anc-wl-stack { width: 100%; padding: 12px 14px; border: 1px solid var(--line2); border-radius: 11px; background: var(--bg-search); color: var(--text); font-size: 14px; font-family: inherit; }
@@ -550,21 +611,6 @@ a.anc-tick:hover { color: var(--accent-text); }
 .anc-hero-sub { color: var(--text2); font-size: 14px; }
 .anc-hero-sub b { color: var(--text); font-weight: 550; }
 .anc-hero-actions { margin-top: 16px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.anc-hero-compare {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  height: 36px;
-  padding: 0 16px;
-  border-radius: 999px;
-  font-size: 13px;
-  font-weight: 550;
-  color: var(--text2);
-  background: var(--bg-card-strong);
-  border: 1px solid var(--line2);
-  transition: color 0.15s, border-color 0.15s, transform 0.15s;
-}
-.anc-hero-compare:hover { color: var(--accent-text); border-color: var(--accent-line); transform: translateY(-1px); }
 .anc-catchup {
   display: inline-flex;
   align-items: center;

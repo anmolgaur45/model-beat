@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import Link from 'next/link'
 import type { inferRouterOutputs } from '@trpc/server'
 import { trpc } from '@/lib/trpc'
 import type { AppRouter } from '@/server/routers/_app'
@@ -227,9 +226,6 @@ export default function HomePageClient({ initialDate, initialClusters, initialTo
             <button className="anc-catchup" onClick={() => { setSearch(''); setRecapMode(true) }}>
               ⚡ Catch me up on the last {RECAP_DAYS} days
             </button>
-            <Link className="anc-hero-compare" href="/models/compare">
-              ⚖ Compare AI models →
-            </Link>
           </div>
           <CategoryFilter selected={selectedCategory} onChange={(c) => { setSelectedCategory(c) }} />
         </header>

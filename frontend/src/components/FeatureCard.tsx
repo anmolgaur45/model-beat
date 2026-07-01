@@ -4,8 +4,10 @@ import Link from 'next/link'
 import type { Article, Cluster, Category } from '@/types/article'
 import { ScoreOrbLarge } from './ScoreBadge'
 import { SourceBubble } from './SourceBubble'
+import { SharePopover } from './SharePopover'
 import { CATEGORY_LABELS } from './categoryMeta'
 import { timeAgo } from '@/lib/timeFormat'
+import { storyPath } from '@/lib/story'
 
 interface Props {
   cluster: Cluster & { articles: Article[] }
@@ -42,6 +44,7 @@ export function FeatureCard({ cluster }: Props) {
               {a.source_name}
             </a>
           ))}
+          <Link className="anc-read anc-full" href={storyPath(cluster)}>Open full story →</Link>
           {primary && (
             <a
               className="anc-read"
@@ -52,6 +55,13 @@ export function FeatureCard({ cluster }: Props) {
               Read original ↗
             </a>
           )}
+          <SharePopover
+            headline={cluster.headline}
+            summary={cluster.summary ?? null}
+            path={storyPath(cluster)}
+            className="anc-fshare"
+            showLabel
+          />
         </div>
         {cluster.models && cluster.models.length > 0 && (
           <div className="anc-cmodels">

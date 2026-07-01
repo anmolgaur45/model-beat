@@ -4,6 +4,7 @@ import sql from '@/lib/db'
 import { SITE_URL as SITE } from '@/lib/site'
 import { comparePairs } from '@/lib/comparePairs'
 import { BEST_VIEWS } from '@/lib/bestModels'
+import { storyPath } from '@/lib/story'
 
 export const revalidate = 3600
 
@@ -40,6 +41,23 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.6,
   }))
 
+  // Per-story permalink pages (Phase P) — only substantive stories (multi-source
+  // or high-significance) within ~1y, matching the story page's own index gate.
+  const storyRows = await sql<{ id: string; headline: string; last: string }[]>`
+    SELECT id, headline, created_at AS last
+    FROM clusters
+    WHERE first_published_at >= now() - interval '370 days'
+      AND (article_count >= 2 OR significance_score >= 6)
+    ORDER BY first_published_at DESC
+    LIMIT 3000
+  `
+  const storyPages: MetadataRoute.Sitemap = storyRows.map((r) => ({
+    url: `${SITE}${storyPath(r)}`,
+    lastModified: new Date(r.last),
+    changeFrequency: 'weekly',
+    priority: 0.5,
+  }))
+
   // Curated "X vs Y" comparison pages (Workstream A).
   const pairs = await comparePairs().catch(() => [])
   const comparePages: MetadataRoute.Sitemap = pairs.map((p) => ({
@@ -61,6 +79,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     })),
     ...comparePages,
     ...modelPages,
+    ...storyPages,
     ...days,
   ]
 }

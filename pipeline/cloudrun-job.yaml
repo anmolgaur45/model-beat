@@ -27,13 +27,14 @@
 #   5. Build and push image:
 #      gcloud builds submit --tag asia-south1-docker.pkg.dev/ai-news-calendar-493510/ainews/pipeline:latest .
 #
-#   6. Deploy job (fill in asia-south1 and ai-news-calendar-493510 below, then run):
-#      gcloud run jobs replace pipeline/cloudrun-job.yaml --region asia-south1
+#   6. Deploy job (us-central1, co-located with Cloud SQL — the image stays in the
+#      asia-south1 Artifact Registry repo, which Cloud Run pulls cross-region):
+#      gcloud run jobs replace pipeline/cloudrun-job.yaml --region us-central1
 #
 # Cloud Scheduler (B3) — run once after job is deployed:
 #   gcloud scheduler jobs create http ainews-pipeline-trigger \
-#     --schedule="0 */6 * * *" \
-#     --uri="https://asia-south1-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/ai-news-calendar-493510/jobs/ainews-pipeline:run" \
+#     --schedule="0 */3 * * *" \
+#     --uri="https://us-central1-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/ai-news-calendar-493510/jobs/ainews-pipeline:run" \
 #     --message-body="{}" \
 #     --oauth-service-account-email="ainews-pipeline@ai-news-calendar-493510.iam.gserviceaccount.com" \
 #     --location=asia-south1
@@ -62,7 +63,12 @@ spec:
       template:
         spec:
           maxRetries: 0
-          timeoutSeconds: 1800
+          # 3600 (was 1800): runs began hitting the 30-min ceiling on 2026-06-30 and
+          # were killed before the tail steps (record_run, revalidate, model registry).
+          # Root cause was cross-region latency — the job ran in asia-south1 while
+          # Cloud SQL lives in us-central1 — fixed by co-locating the job with the DB
+          # (see deploy-pipeline.yml JOB_REGION). The raised timeout is headroom.
+          timeoutSeconds: 3600
           serviceAccountName: ainews-pipeline@ai-news-calendar-493510.iam.gserviceaccount.com
           containers:
             - image: asia-south1-docker.pkg.dev/ai-news-calendar-493510/ainews/pipeline:latest

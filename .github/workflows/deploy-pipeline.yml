@@ -15,7 +15,11 @@ on:
 
 env:
   PROJECT_ID: ai-news-calendar-493510
+  # Artifact Registry region (baked into IMAGE); Cloud Run pulls it cross-region
   REGION: asia-south1
+  # Job runs next to Cloud SQL (us-central1). It was asia-south1 until 2026-07-02:
+  # every DB query crossed Mumbai<->Iowa and runs blew the 30-min timeout.
+  JOB_REGION: us-central1
   IMAGE: asia-south1-docker.pkg.dev/ai-news-calendar-493510/ainews/pipeline
   JOB: ainews-pipeline
 
@@ -80,4 +84,4 @@ jobs:
       - name: Deploy Cloud Run Job (pinned to this commit)
         run: |
           sed "s|$IMAGE:latest|$IMAGE:$GITHUB_SHA|" pipeline/cloudrun-job.yaml > /tmp/job.yaml
-          gcloud run jobs replace /tmp/job.yaml --region "$REGION"
+          gcloud run jobs replace /tmp/job.yaml --region "$JOB_REGION"

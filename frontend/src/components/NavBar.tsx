@@ -53,7 +53,8 @@ export function NavBar({ query = '', onQuery, onHome }: Props) {
   }, [showSearch])
 
   const isModels = pathname.startsWith('/models')
-  const isNews = !isModels
+  const isDigest = pathname.startsWith('/digest')
+  const isNews = !isModels && !isDigest
 
   return (
     <div className={`anc-navwrap${navHidden ? ' nav-hidden' : ''}${scrolled ? ' nav-scrolled' : ''}`}>
@@ -98,6 +99,7 @@ export function NavBar({ query = '', onQuery, onHome }: Props) {
         <div className="anc-navactions">
           <Link className={`anc-navlink${isNews ? ' is-active' : ''}`} href="/">News</Link>
           <Link className={`anc-navlink${isModels ? ' is-active' : ''}`} href="/models">Models</Link>
+          <Link className={`anc-navlink${isDigest ? ' is-active' : ''}`} href="/digest">Digest</Link>
 
           <button
             className="anc-theme-btn"

@@ -9,8 +9,11 @@ export const maxDuration = 60
  * After running this, execute the Python pipeline to re-cluster.
  */
 export async function POST(req: NextRequest) {
+  // Refuse outright when the secret is unset — otherwise the expected value is
+  // the literal string "Bearer undefined" and anyone can wipe clusters.
+  const secret = process.env.INGEST_SECRET
   const auth = req.headers.get('authorization') ?? ''
-  if (auth !== `Bearer ${process.env.INGEST_SECRET}`) {
+  if (!secret || auth !== `Bearer ${secret}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
@@ -49,16 +52,38 @@ export async function POST(req: NextRequest) {
     articles.map((a) => a.cluster_id).filter(Boolean)
   )] as string[]
 
-  await sql`UPDATE articles SET cluster_id = NULL WHERE id = ANY(${articleIds})`
+  // One transaction (a crash between the update and the delete used to strand
+  // unclustered articles next to their still-live clusters). Only clusters left
+  // empty are deleted: deleting a cluster that still has members outside the
+  // window fired the FK's ON DELETE SET NULL on them, and the pipeline only
+  // re-clusters recent articles, so those old members were orphaned forever.
+  let clustersDeleted = 0
+  await sql.begin(async (tx) => {
+    await tx`UPDATE articles SET cluster_id = NULL WHERE id = ANY(${articleIds})`
 
-  if (clusterIds.length > 0) {
-    await sql`DELETE FROM clusters WHERE id = ANY(${clusterIds})`
-  }
+    if (clusterIds.length > 0) {
+      const deleted = await tx`
+        DELETE FROM clusters
+        WHERE id = ANY(${clusterIds})
+        AND NOT EXISTS (SELECT 1 FROM articles a WHERE a.cluster_id = clusters.id)
+      `
+      clustersDeleted = deleted.count
+      // Surviving clusters (kept for their out-of-window members) shrank:
+      // refresh their counts and window start.
+      await tx`
+        UPDATE clusters c SET
+          article_count      = (SELECT COUNT(*) FROM articles a WHERE a.cluster_id = c.id),
+          first_published_at = (SELECT MIN(published_at) FROM articles a WHERE a.cluster_id = c.id)
+        WHERE c.id = ANY(${clusterIds})
+        AND EXISTS (SELECT 1 FROM articles a WHERE a.cluster_id = c.id)
+      `
+    }
+  })
 
   return NextResponse.json({
     windowHours,
     reset: articleIds.length,
-    clustersDeleted: clusterIds.length,
+    clustersDeleted,
     message: 'Clusters reset. Run the Python pipeline to re-cluster.',
   })
 }

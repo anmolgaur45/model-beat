@@ -170,3 +170,26 @@ ALTER TABLE models ADD COLUMN IF NOT EXISTS output_modalities TEXT;
 
 -- Phase O5: benchmark provenance (epoch authoritative, aa fills gaps).
 ALTER TABLE model_benchmarks ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'epoch';
+
+-- Run bookkeeping, written by main.py at the end of every run and read by the
+-- frontend's stale-data banner. Previously only in frontend/supabase/migrations,
+-- so a DB provisioned from this file crashed the pipeline's record_run step.
+CREATE TABLE IF NOT EXISTS pipeline_runs (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  ran_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  articles_ingested INT NOT NULL DEFAULT 0,
+  clusters_updated  INT NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_pipeline_runs_ran_at ON pipeline_runs (ran_at DESC);
+
+-- Email capture (stack-watch waitlist + digest signups), written by the
+-- frontend's /api/waitlist. Mirrored here so both schema sources provision a
+-- complete database.
+CREATE TABLE IF NOT EXISTS waitlist (
+  id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  email      TEXT NOT NULL,
+  stack      TEXT,
+  source     TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS waitlist_email_key ON waitlist (lower(email));

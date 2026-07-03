@@ -36,6 +36,9 @@ export interface Cluster {
   articles?: Article[]
   // models this story covers, for internal cross-linking to /models/[slug]
   models?: { slug: string; name: string }[]
+  // every member is arXiv (computed over ALL members in getClusters, not the
+  // 3-article display cap) — drives the papers shelf split
+  paper_only?: boolean
 }
 
 // Model registry (Phase K) — Epoch AI–backed canonical model + its benchmarks.

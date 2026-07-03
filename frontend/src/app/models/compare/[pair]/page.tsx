@@ -23,9 +23,12 @@ function parsePair(pair: string): [string, string] | null {
   return [a, b]
 }
 
+// No catch: getModelsByIds returns [] for genuinely unknown slugs (that path
+// still 404s below); a thrown DB error during ISR regeneration must propagate
+// so Next keeps serving the last good page instead of caching a 404.
 const loadPair = cache(async (a: string, b: string): Promise<Model[]> => {
   const caller = appRouter.createCaller(createContext())
-  return caller.articles.getModelsByIds({ slugs: [a, b] }).catch(() => [] as Model[])
+  return caller.articles.getModelsByIds({ slugs: [a, b] })
 })
 
 // ── formatting ──────────────────────────────────────────────────────────────

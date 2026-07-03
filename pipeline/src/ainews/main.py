@@ -84,13 +84,15 @@ def filter_existing(conn: psycopg.Connection, articles: list[NormalizedArticle])
     if not candidates:
         return []
 
-    # Same article, different URL: match on (source_name, title) over the last 7 days
-    titles = [a.title for a in candidates]
+    # Same article, different URL: match on (source_name, title) over the last 7
+    # days. lower() on both sides — the pair check below is case-insensitive, so
+    # an exact-case SQL match let case-differing duplicates through.
+    titles = [a.title.lower() for a in candidates]
     with conn.cursor() as cur:
         cur.execute(
             """
             SELECT lower(source_name), lower(title) FROM articles
-            WHERE published_at >= now() - interval '7 days' AND title = ANY(%s)
+            WHERE published_at >= now() - interval '7 days' AND lower(title) = ANY(%s)
             """,
             (titles,),
         )
@@ -228,6 +230,11 @@ def main() -> None:
             aa_benched = sync_aa_benchmarks(conn)
             linked = link_model_coverage(conn)
         except Exception as exc:
+            # A DB error escaping a registry step leaves the shared connection in
+            # an aborted transaction; without this rollback, record_run below
+            # fails and the whole run is marked failed despite the content work
+            # having succeeded (and notify_revalidate never fires).
+            conn.rollback()
             log.warning("pipeline.model_registry_failed", error=str(exc))
         log.info(
             "pipeline.models",

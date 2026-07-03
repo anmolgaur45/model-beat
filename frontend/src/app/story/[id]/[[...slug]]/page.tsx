@@ -1,6 +1,7 @@
 import { cache } from 'react'
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import { TRPCError } from '@trpc/server'
 import { notFound } from 'next/navigation'
 import { SITE_URL } from '@/lib/site'
 import { appRouter } from '@/server/routers/_app'
@@ -21,7 +22,15 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 const loadStory = cache(async (id: string) => {
   const caller = appRouter.createCaller(createContext())
-  return caller.articles.getCluster({ id }).catch(() => null)
+  try {
+    return await caller.articles.getCluster({ id })
+  } catch (err) {
+    // Only a genuinely missing row becomes a 404. A DB blip during ISR
+    // regeneration must rethrow so Next keeps serving the last good page —
+    // swallowing it here cached a 404 over a healthy story for up to an hour.
+    if (err instanceof TRPCError && err.code === 'NOT_FOUND') return null
+    throw err
+  }
 })
 
 function utcDay(iso: string): string {

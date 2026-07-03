@@ -137,7 +137,7 @@ export function ModelsLeaderboard({
             className={`anc-lbtab ${tab === t.key ? 'is-active' : ''}`}
             href={t.key === 'newest' ? '/models' : `/models/best/${t.key}`}
             onClick={(e) => {
-              if (e.metaKey || e.ctrlKey || e.shiftKey) return
+              if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
               e.preventDefault()
               selectTab(t.key)
             }}

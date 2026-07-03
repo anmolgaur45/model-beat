@@ -36,10 +36,18 @@ export async function POST(request: Request) {
   const source = ((body.source ?? '').trim().slice(0, 50)) || 'stack-watch'
 
   try {
+    // On a repeat email, upgrade the row toward the digest (the beehiiv export
+    // filters on source LIKE 'digest%'): a plain DO NOTHING silently dropped a
+    // digest signup from anyone already on the stack-watch waitlist, so they
+    // were told "lands Thursday" but never made the export. Never downgrade a
+    // digest subscriber back to a non-digest source.
     await sql`
       INSERT INTO waitlist (email, stack, source)
       VALUES (${email}, ${stack}, ${source})
-      ON CONFLICT (lower(email)) DO NOTHING
+      ON CONFLICT (lower(email)) DO UPDATE
+        SET source = EXCLUDED.source,
+            stack = COALESCE(EXCLUDED.stack, waitlist.stack)
+        WHERE waitlist.source NOT LIKE 'digest%' AND EXCLUDED.source LIKE 'digest%'
     `
   } catch {
     return NextResponse.json({ error: 'server_error' }, { status: 500 })

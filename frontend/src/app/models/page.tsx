@@ -15,7 +15,9 @@ async function loadModels(): Promise<Model[]> {
 }
 
 export default async function ModelsPage() {
-  const models = await loadModels().catch(() => [] as Model[])
+  // No catch: a DB blip during ISR regeneration must throw so Next keeps serving
+  // the last good page, instead of caching an empty leaderboard as a healthy 200.
+  const models = await loadModels()
 
   // ItemList of the top models for SEO (server-rendered alongside the table HTML).
   const jsonLd = {

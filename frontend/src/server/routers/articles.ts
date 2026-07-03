@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { TRPCError } from '@trpc/server'
 import { router, publicProcedure } from '../trpc'
 import sql from '@/lib/db'
 import type { Article, Cluster, Model, ModelBenchmark } from '@/types/article'
@@ -10,7 +11,15 @@ const CATEGORY_VALUES = [
 ] as const
 
 const zCategory = z.enum(CATEGORY_VALUES).optional()
-const zDateStr = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional()
+// Format AND real-calendar check: '2026-99-99' passes the regex but yields an
+// Invalid Date whose toISOString() throws — a public-API 500 instead of a 400.
+const zDateStr = z.string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/)
+  .refine((s) => {
+    const d = new Date(s + 'T12:00:00Z')
+    return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s
+  }, 'Invalid calendar date')
+  .optional()
 
 // Lightweight related-story shape returned by getCluster for card links.
 export type RelatedStory = {
@@ -166,7 +175,7 @@ export const articlesRouter = router({
       const articles = await sql<Article[]>`
         SELECT ${ARTICLE_COLS} FROM articles
         WHERE cluster_id = ANY(${clusterIds})
-        ORDER BY significance_base DESC
+        ORDER BY significance_base DESC NULLS LAST
       `
 
       const articlesByCluster = new Map<string, Article[]>()
@@ -208,7 +217,7 @@ export const articlesRouter = router({
       const articles = await sql<Article[]>`
         SELECT ${ARTICLE_COLS} FROM articles
         WHERE cluster_id = ANY(${clusterIds})
-        ORDER BY significance_base DESC
+        ORDER BY significance_base DESC NULLS LAST
       `
 
       const articlesByCluster = new Map<string, Article[]>()
@@ -261,15 +270,24 @@ export const articlesRouter = router({
       const articles = await sql<Article[]>`
         SELECT ${ARTICLE_COLS} FROM articles
         WHERE cluster_id = ANY(${clusterIds})
-        ORDER BY significance_base DESC
+        ORDER BY significance_base DESC NULLS LAST
       `
 
       const articlesByCluster = new Map<string, Article[]>()
+      // paper_only is judged over ALL members before the 3-article display cap:
+      // with only the top 3 (arXiv authority 5 outranks aggregator-attributed
+      // outlets at 3), a cluster of three arXiv near-dupes plus a real outlet
+      // would look all-arXiv and get shelved despite having news coverage.
+      const allArxiv = new Map<string, boolean>()
       for (const article of articles) {
         if (!article.cluster_id) continue
         const arr = articlesByCluster.get(article.cluster_id) ?? []
         if (arr.length < 3) arr.push(article)
         articlesByCluster.set(article.cluster_id, arr)
+        allArxiv.set(
+          article.cluster_id,
+          (allArxiv.get(article.cluster_id) ?? true) && article.source_name.startsWith('arXiv'),
+        )
       }
 
       // Models this story is about (SEO cross-linking) — links a release story
@@ -293,6 +311,7 @@ export const articlesRouter = router({
           ...c,
           articles: articlesByCluster.get(c.id) ?? [],
           models: modelsByCluster.get(c.id) ?? [],
+          paper_only: allArxiv.get(c.id) ?? false,
         }))
         .filter((c) => c.articles.length > 0) as (Cluster & { articles: Article[] })[]
     }),
@@ -309,7 +328,9 @@ export const articlesRouter = router({
         const [article] = await sql<Article[]>`
           SELECT ${ARTICLE_COLS} FROM articles WHERE id = ${input.id}
         `
-        if (!article) throw new Error('Not found')
+        // Typed code so callers can tell "row missing" (404) apart from a DB
+        // failure — the story page must never turn a transient error into a 404.
+        if (!article) throw new TRPCError({ code: 'NOT_FOUND', message: 'Not found' })
         return {
           id: article.id,
           headline: article.title,
@@ -328,7 +349,7 @@ export const articlesRouter = router({
       const articles = await sql<Article[]>`
         SELECT ${ARTICLE_COLS} FROM articles
         WHERE cluster_id = ${input.id}
-        ORDER BY significance_base DESC
+        ORDER BY significance_base DESC NULLS LAST
       `
 
       // Models this story is about, for cross-linking to /models/[slug]. Cap 3.
@@ -391,17 +412,21 @@ export const articlesRouter = router({
         : sql``
 
       let dateFromFilter = sql``
+      let artDateFromFilter = sql``
       if (input.dateFrom) {
         const s = new Date(input.dateFrom)
         s.setUTCHours(0, 0, 0, 0)
         dateFromFilter = sql`AND first_published_at >= ${s.toISOString()}`
+        artDateFromFilter = sql`AND published_at >= ${s.toISOString()}`
       }
 
       let dateToFilter = sql``
+      let artDateToFilter = sql``
       if (input.dateTo) {
         const e = new Date(input.dateTo)
         e.setUTCHours(23, 59, 59, 999)
         dateToFilter = sql`AND first_published_at <= ${e.toISOString()}`
+        artDateToFilter = sql`AND published_at <= ${e.toISOString()}`
       }
 
       // Query 1: FTS on cluster headlines
@@ -419,10 +444,17 @@ export const articlesRouter = router({
       const ilikeTerms = expandForILIKE(input.query)
       // No % or _ in terms needed since the user query was already validated above
       const patterns = ilikeTerms.map((t) => `%${t}%`)
+      // Newest-first with the date filter pushed down: the unordered 500-id cap
+      // used to sample arbitrary (often old) clusters for prolific sources, so a
+      // date-filtered source search could return nothing despite recent matches.
+      // Duplicate cluster_ids are collapsed by the extraIds Set below.
       const sourceArticles = await sql<{ cluster_id: string }[]>`
-        SELECT DISTINCT cluster_id FROM articles
+        SELECT cluster_id FROM articles
         WHERE cluster_id IS NOT NULL
         AND source_name ILIKE ANY(${patterns})
+        ${artDateFromFilter}
+        ${artDateToFilter}
+        ORDER BY published_at DESC
         LIMIT 500
       `
 
@@ -468,7 +500,7 @@ export const articlesRouter = router({
       const articles = await sql<Article[]>`
         SELECT ${ARTICLE_COLS} FROM articles
         WHERE cluster_id = ANY(${clusterIds})
-        ORDER BY significance_base DESC
+        ORDER BY significance_base DESC NULLS LAST
       `
 
       const byCluster = new Map<string, Article[]>()
@@ -546,12 +578,15 @@ export const articlesRouter = router({
 
       // Percentile rank for each benchmark vs every last-year model, so the page
       // can show "where this lands among all models" as a uniform bar (Phase O4).
+      // The model itself is always in the population: once it ages past a year,
+      // excluding it lets `below` reach n and the math exceed 100%.
       if (benchmarks.length > 0) {
         const names = benchmarks.map((b) => b.benchmark)
         const pop = await sql<{ benchmark: string; score: number }[]>`
           SELECT mb.benchmark, mb.score FROM model_benchmarks mb
           JOIN models m ON m.id = mb.model_id
-          WHERE m.released_at >= now() - interval '1 year' AND mb.benchmark = ANY(${names})
+          WHERE (m.released_at >= now() - interval '1 year' OR m.id = ${model.id})
+            AND mb.benchmark = ANY(${names})
         `
         const byBench = new Map<string, number[]>()
         for (const r of pop) {
@@ -563,7 +598,7 @@ export const articlesRouter = router({
           const arr = byBench.get(b.benchmark) ?? []
           const n = arr.length
           const below = arr.filter((s) => s < b.score).length
-          b.percentile = n > 1 ? Math.round((below / (n - 1)) * 100) : 100
+          b.percentile = n > 1 ? Math.min(100, Math.round((below / (n - 1)) * 100)) : 100
         }
       }
 
@@ -581,7 +616,7 @@ export const articlesRouter = router({
         const articles = await sql<Article[]>`
           SELECT ${ARTICLE_COLS} FROM articles
           WHERE cluster_id = ANY(${cids})
-          ORDER BY significance_base DESC
+          ORDER BY significance_base DESC NULLS LAST
         `
         const byCluster = new Map<string, Article[]>()
         for (const a of articles) {
@@ -611,16 +646,19 @@ export const articlesRouter = router({
       const models = await sql<Model[]>`SELECT * FROM models WHERE slug = ANY(${slugs})`
       if (models.length === 0) return []
 
-      // Population for percentile ranking: the whole last-year registry.
+      const ids = models.map((m) => m.id)
+
+      // Population for percentile ranking: the whole last-year registry, plus
+      // the requested models themselves — a model past its first anniversary
+      // would otherwise drop out of its own population and silently lose its
+      // headline and bucket scores in still-live compare URLs.
       const allBench = await sql<{ model_id: string; benchmark: string; score: number }[]>`
         SELECT mb.model_id, mb.benchmark, mb.score
         FROM model_benchmarks mb
         JOIN models m ON m.id = mb.model_id
-        WHERE m.released_at >= now() - interval '1 year'
+        WHERE m.released_at >= now() - interval '1 year' OR m.id = ANY(${ids})
       `
       const { eciByModel, bucketScore } = buildScoreMaps(allBench)
-
-      const ids = models.map((m) => m.id)
       const benchRows = await sql<(ModelBenchmark & { model_id: string })[]>`
         SELECT model_id, benchmark, score, unit FROM model_benchmarks
         WHERE model_id = ANY(${ids})

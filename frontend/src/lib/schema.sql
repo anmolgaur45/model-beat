@@ -1,3 +1,9 @@
+-- ⚠️ STALE — do not provision a database from this file.
+-- It predates impact_score, significance_base, headline_tsv/FTS,
+-- find_nearest_article, pipeline_runs, and waitlist; the first frontend query
+-- against a DB built from it fails. Canonical schema lives in
+-- frontend/supabase/migrations/ (applied in order) and pipeline/migrations/schema.sql.
+
 -- AI News Calendar — Initial Database Schema
 -- Run in Supabase SQL Editor
 -- Requires: Database → Extensions → enable "vector" (pgvector)

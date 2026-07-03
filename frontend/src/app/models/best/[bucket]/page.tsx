@@ -14,9 +14,11 @@ export const revalidate = 3600
 
 const SITE = SITE_URL
 
+// No catch: a DB blip during ISR regeneration must throw so Next keeps serving
+// the last good page, instead of caching an empty leaderboard as a healthy 200.
 const loadModels = cache(async (): Promise<Model[]> => {
   const caller = appRouter.createCaller(createContext())
-  return caller.articles.getModels({ limit: 200 }).catch(() => [] as Model[])
+  return caller.articles.getModels({ limit: 200 })
 })
 
 export async function generateStaticParams() {
@@ -103,7 +105,10 @@ export default async function BestModelsPage({
       <NavBar />
 
       <main className="anc-models">
-        <ModelsExplorer models={models} initialTab={view.key as TabKey} />
+        {/* Keyed by bucket: App Router reconciles (not remounts) client components
+            when only the dynamic param changes, so without the key a best→best
+            navigation keeps the previous bucket's tab state and content. */}
+        <ModelsExplorer key={view.key} models={models} initialTab={view.key as TabKey} />
 
         <p className="anc-epoch-credit">
           Benchmarks &amp; model data from{' '}

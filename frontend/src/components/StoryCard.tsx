@@ -51,6 +51,9 @@ export function StoryCard({ cluster, showDate = false, scoreStyle = 'orb', highl
         tabIndex={0}
         onClick={() => setIsOpen((o) => !o)}
         onKeyDown={(e) => {
+          // Only when the head itself is focused — Enter on the nested headline
+          // <Link> must navigate, not toggle the card.
+          if (e.target !== e.currentTarget) return
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault()
             setIsOpen((o) => !o)

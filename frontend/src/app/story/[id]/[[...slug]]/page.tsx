@@ -98,10 +98,26 @@ export default async function StoryPage({
       '@type': 'NewsArticle',
       headline: story.headline,
       datePublished: story.first_published_at,
+      // created_at moves when the cluster gains articles or a fresh summary —
+      // the machine-readable freshness signal engines look for.
+      ...(story.created_at ? { dateModified: story.created_at } : {}),
       description: summary.slice(0, 250),
       mainEntityOfPage: canonical,
+      image: `${SITE}/api/og?title=${encodeURIComponent(story.headline)}`,
+      publisher: {
+        '@type': 'NewsMediaOrganization',
+        name: 'Model Beat',
+        logo: { '@type': 'ImageObject', url: `${SITE}/api/og` },
+      },
       ...(story.articles[0]?.author ? { author: { '@type': 'Person', name: story.articles[0].author } } : {}),
-      ...(story.articles[0]?.source_url ? { isBasedOn: story.articles[0].source_url } : {}),
+      // The multi-source synthesis is the differentiator: cite every source,
+      // not just the lead article.
+      ...(story.articles.length
+        ? {
+            isBasedOn: story.articles.map((a) => a.source_url),
+            citation: story.articles.map((a) => a.source_url),
+          }
+        : {}),
     },
     {
       '@context': 'https://schema.org',

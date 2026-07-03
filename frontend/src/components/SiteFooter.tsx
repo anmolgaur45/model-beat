@@ -18,6 +18,7 @@ export function SiteFooter() {
           <Link href="/">News</Link>
           <Link href="/models">Models</Link>
           <Link href="/digest">Digest</Link>
+          <Link href="/about">About</Link>
           <Link href="/privacy">Privacy Policy</Link>
         </nav>
 

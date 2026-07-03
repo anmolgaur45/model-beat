@@ -9,6 +9,7 @@ import sql from '@/lib/db'
 import { FeatureCard } from '@/components/FeatureCard'
 import { StoryCard } from '@/components/StoryCard'
 import { NavBar } from '@/components/NavBar'
+import { storyPath } from '@/lib/story'
 
 // Match the homepage's top-story gate: only a high-signal lead gets the hero card.
 const TOP_STORY_MIN = 6
@@ -156,7 +157,9 @@ export default async function DayPage({
           headline: c.headline,
           datePublished: c.first_published_at,
           description: bestText(c).slice(0, 250),
-          url: c.articles[0]?.source_url ?? `${SITE}/day/${date}`,
+          // Our permalink (schema + all sources), not the external publisher.
+          url: `${SITE}${storyPath(c)}`,
+          publisher: { '@type': 'NewsMediaOrganization', name: 'Model Beat' },
         },
       })),
     },

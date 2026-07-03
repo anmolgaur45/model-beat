@@ -68,7 +68,9 @@ function accessLabel(m: Model): string | null {
 }
 function fmtUpdated(iso: string | null | undefined): string {
   if (!iso) return ''
-  return new Date(iso).toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' })
+  // Full date, not month/year — the registry refreshes every 3h and recency is
+  // the page's strongest signal; "July 2026" reads as potentially months stale.
+  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })
 }
 
 // Top benchmarks by percentile rank — drives the "strongest results" FAQ answer.
@@ -296,6 +298,7 @@ export default async function ModelPage({
       operatingSystem: 'Cloud',
       ...(model.vendor ? { author: { '@type': 'Organization', name: model.vendor } } : {}),
       ...(model.released_at ? { datePublished: model.released_at } : {}),
+      ...(model.updated_at ? { dateModified: model.updated_at } : {}),
       description: model.description ?? synopsis(model),
       url: `${SITE}/models/${slug}`,
     },

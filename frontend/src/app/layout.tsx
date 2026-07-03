@@ -95,6 +95,20 @@ const SITE_JSONLD = [
     name: 'Model Beat',
     url: SITE,
     logo: `${SITE}/api/og`,
+    // E-E-A-T: a named operator and reachable contact make the site citable to
+    // answer engines. Append LinkedIn/X profile URLs to sameAs when available.
+    founder: {
+      '@type': 'Person',
+      name: 'Anmol Gaur',
+      url: `${SITE}/about`,
+      sameAs: ['https://github.com/anmolgaur45'],
+    },
+    sameAs: ['https://github.com/anmolgaur45'],
+    contactPoint: {
+      '@type': 'ContactPoint',
+      contactType: 'editorial',
+      email: 'anmolgaur45@gmail.com',
+    },
   },
 ]
 

@@ -4,7 +4,9 @@ import { useState, useEffect, useRef } from 'react'
 import type { Article, Cluster } from '@/types/article'
 import { StoryCard } from './StoryCard'
 import { FeatureCard } from './FeatureCard'
+import { PapersFold } from './PapersFold'
 import { formatDateLabel } from '@/lib/timeFormat'
+import { isPaperCluster } from '@/lib/papers'
 import type { ScoreStyle } from './ScoreBadge'
 
 type ClusterWithArticles = Cluster & { articles: Article[] }
@@ -67,7 +69,11 @@ interface Props {
 export function DateSection({ date, clusters, scoreStyle = 'orb' }: Props) {
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE)
 
-  const sorted = [...clusters].sort((a, b) => b.significance_score - a.significance_score)
+  // Pure-arXiv paper clusters collapse into a shelf below the stories — a day
+  // that's "20 stories · 80 papers" should read that way, not as a 100-item dump.
+  const all = [...clusters].sort((a, b) => b.significance_score - a.significance_score)
+  const sorted = all.filter((c) => !isPaperCluster(c))
+  const papers = all.filter((c) => isPaperCluster(c))
   const label = formatDateLabel(date)
 
   // Promote the top cluster to the hero "top story" card only when it clears the
@@ -78,8 +84,10 @@ export function DateSection({ date, clusters, scoreStyle = 'orb' }: Props) {
   const hasMore = visibleCount < cards.length
 
   // Honest signalling: stories ran, but nothing reached the "notable" tier (>= 7).
-  // Better to say so than to dress up a slow news day.
+  // Better to say so than to dress up a slow news day. Today gets a softer line:
+  // "quiet day" is a verdict, and the day isn't over yet.
   const isQuietDay = sorted.length > 0 && (sorted[0].significance_score ?? 0) < 7
+  const quietLabel = label === 'Today' ? 'early on the beat · more lands all day' : 'quiet day · nothing major broke'
 
   // Infinite scroll: reveal the next page when the sentinel scrolls into view.
   const sentinelRef = useRef<HTMLDivElement | null>(null)
@@ -101,12 +109,15 @@ export function DateSection({ date, clusters, scoreStyle = 'orb' }: Props) {
     <section>
       <div className="anc-dhead">
         <h2 className="anc-dhead-label">{label}</h2>
-        <span className="anc-dhead-count">{sorted.length} {sorted.length === 1 ? 'story' : 'stories'}</span>
-        {isQuietDay && <span className="anc-dhead-quiet">quiet day · nothing major broke</span>}
+        <span className="anc-dhead-count">
+          {sorted.length} {sorted.length === 1 ? 'story' : 'stories'}
+          {papers.length > 0 && <> · {papers.length} {papers.length === 1 ? 'paper' : 'papers'}</>}
+        </span>
+        {isQuietDay && <span className="anc-dhead-quiet">{quietLabel}</span>}
         <span className="anc-dhead-rule" />
       </div>
 
-      {sorted.length === 0 ? (
+      {sorted.length === 0 && papers.length === 0 ? (
         <EmptyState dateLabel={label} />
       ) : (
         <>
@@ -115,6 +126,10 @@ export function DateSection({ date, clusters, scoreStyle = 'orb' }: Props) {
             <StoryCard key={cluster.id} cluster={cluster} scoreStyle={scoreStyle} />
           ))}
           {hasMore && <div ref={sentinelRef} className="anc-scroll-sentinel" aria-hidden />}
+          {/* Always rendered (the header advertises the paper count, so the shelf
+              must be reachable without exhausting the infinite scroll) and keyed
+              by date so open/collapsed state never leaks across day switches. */}
+          <PapersFold key={date} papers={papers} scoreStyle={scoreStyle} defaultOpen={sorted.length < 6} />
         </>
       )}
     </section>

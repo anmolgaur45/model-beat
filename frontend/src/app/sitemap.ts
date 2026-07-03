@@ -14,8 +14,10 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const rows = await sql<{ day: string; last: string }[]>`
     SELECT to_char(first_published_at AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS day,
            max(created_at) AS last
-    FROM clusters
+    FROM clusters c
     WHERE first_published_at >= now() - interval '370 days'
+      AND EXISTS (SELECT 1 FROM articles a
+                  WHERE a.cluster_id = c.id AND a.source_name NOT LIKE 'arXiv%')
     GROUP BY day
     HAVING count(*) >= 3
     ORDER BY day DESC

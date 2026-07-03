@@ -8,12 +8,12 @@ import type { Category, Cluster, Article } from '@/types/article'
 import type { CategoryOption } from '@/components/CategoryFilter'
 import { CategoryFilter } from '@/components/CategoryFilter'
 import { DateSection, SkeletonSection } from '@/components/DateSection'
+import { isPaperCluster } from '@/lib/papers'
 import { DateNav } from '@/components/DateNav'
 import { StoryCard } from '@/components/StoryCard'
 import { Recap } from '@/components/Recap'
 import { NavBar } from '@/components/NavBar'
 import { Ticker } from '@/components/Ticker'
-import { WaitlistBanner } from '@/components/WaitlistBanner'
 import { HeroModelBand, type TopModel } from '@/components/HeroModelBand'
 import { CATEGORY_LABELS } from '@/components/categoryMeta'
 
@@ -131,6 +131,13 @@ export default function HomePageClient({ initialDate, initialClusters, initialTo
     },
   )
 
+  // Honest split for the hero count: pure-arXiv paper clusters are shelved
+  // below the stories by DateSection, so don't count them as "stories".
+  const paperCount = (timelineData ?? []).filter(isPaperCluster).length
+  const storyCount = (timelineData ?? []).length - paperCount
+
+  const isTodaySelected = selectedDate === todayISO()
+
   const { data: searchPage, isLoading: searchLoading, isFetching: searchFetching } =
     trpc.articles.search.useQuery(
       { query: search.trim(), category: categoryParam, limit: 20, offset: searchOffset },
@@ -166,7 +173,7 @@ export default function HomePageClient({ initialDate, initialClusters, initialTo
   // Story count map for date rail
   const storyCounts = useMemo(() => {
     if (!timelineData) return {}
-    return { [selectedDate]: timelineData.length }
+    return { [selectedDate]: timelineData.filter((c) => !isPaperCluster(c)).length }
   }, [timelineData, selectedDate])
 
   const { display: heroDisplay, sub: heroSub } = heroDateLabel(selectedDate)
@@ -207,8 +214,6 @@ export default function HomePageClient({ initialDate, initialClusters, initialTo
       {/* Model-intelligence band — leads the content with the tracker/compare wedge */}
       {timelineMode && <HeroModelBand models={initialTopModels} />}
 
-      {/* Stack Watch early-access promo (dismissible) — flows from the band */}
-      <WaitlistBanner />
 
       {/* Hero — date heading + category pills */}
       {timelineMode && (
@@ -221,8 +226,9 @@ export default function HomePageClient({ initialDate, initialClusters, initialTo
             <span className="dim">· {heroSub}</span>
           </h1>
           <div className="anc-hero-sub">
-            <b>{(timelineData ?? []).length} {(timelineData ?? []).length === 1 ? 'story' : 'stories'}</b>
-            {selectedCategory !== 'all' ? ` in ${CATEGORY_LABELS[selectedCategory]}` : ' today'},
+            <b>{storyCount} {storyCount === 1 ? 'story' : 'stories'}</b>
+            {paperCount > 0 && <> · {paperCount} {paperCount === 1 ? 'paper' : 'papers'}</>}
+            {selectedCategory !== 'all' ? ` in ${CATEGORY_LABELS[selectedCategory]}` : isTodaySelected ? ' so far today' : ''},
             {' '}ranked by significance · highest signal first
           </div>
           <div className="anc-hero-actions">

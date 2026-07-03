@@ -1641,6 +1641,21 @@ a.anc-src:hover { color: var(--accent-text); }
 .anc-ctitle { color: inherit; text-decoration: none; }
 .anc-ctitle:hover { text-decoration: underline; text-underline-offset: 3px; }
 
+/* Collapsed research-papers shelf at the bottom of a day's story list */
+.anc-papersfold { margin-top: 14px; }
+.anc-papersfold-head {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  padding: 12px 20px; cursor: pointer;
+  background: none; border: 1px dashed var(--line2); border-radius: 12px;
+  color: var(--text2); font-family: inherit; font-size: 13.5px; text-align: left;
+}
+.anc-papersfold-head:hover { border-color: var(--accent-line); color: var(--text); }
+.anc-papersfold-label { font-weight: 600; }
+.anc-papersfold-hint { color: var(--text3); font-size: 12.5px; margin-left: auto; }
+.anc-papersfold-head .anc-chev { transition: transform 0.15s ease; }
+.anc-papersfold-head .anc-chev.is-open { transform: rotate(180deg); }
+.anc-papersfold > .anc-card:first-of-type { margin-top: 10px; }
+
 .anc-card-head {
   display: flex;
   align-items: center;

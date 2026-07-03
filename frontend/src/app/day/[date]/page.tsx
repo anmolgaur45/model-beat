@@ -10,6 +10,8 @@ import { FeatureCard } from '@/components/FeatureCard'
 import { StoryCard } from '@/components/StoryCard'
 import { NavBar } from '@/components/NavBar'
 import { storyPath } from '@/lib/story'
+import { isPaperCluster } from '@/lib/papers'
+import { PapersFold } from '@/components/PapersFold'
 
 // Match the homepage's top-story gate: only a high-signal lead gets the hero card.
 const TOP_STORY_MIN = 6
@@ -72,8 +74,10 @@ const adjacentDays = cache(async (date: string) => {
   const [row] = await sql<{ prev: string | null; next: string | null }[]>`
     WITH substantive AS (
       SELECT to_char(first_published_at AT TIME ZONE 'UTC','YYYY-MM-DD') AS d
-      FROM clusters
+      FROM clusters c
       WHERE first_published_at >= now() - interval '370 days'
+        AND EXISTS (SELECT 1 FROM articles a
+                    WHERE a.cluster_id = c.id AND a.source_name NOT LIKE 'arXiv%')
       GROUP BY 1 HAVING count(*) >= ${DAY_INDEX_MIN_STORIES}
     )
     SELECT
@@ -94,7 +98,11 @@ export async function generateMetadata({
   if (clusters.length === 0) return {}
 
   const label = longDate(date)
-  const top = clusters.slice(0, 3).map((c) => c.headline).join(' · ')
+  // Lead with editorial stories, not shelved paper clusters — the SERP snippet
+  // must match what the page shows above the fold. All-paper days fall back.
+  const metaStories = clusters.filter((c) => !isPaperCluster(c))
+  const top = (metaStories.length > 0 ? metaStories : clusters)
+    .slice(0, 3).map((c) => c.headline).join(' · ')
   const description = `The AI news that mattered on ${label}: ${top}`.slice(0, 200)
   const url = `${SITE}/day/${date}`
 
@@ -102,7 +110,7 @@ export async function generateMetadata({
     title: `AI news on ${label}`,
     description,
     alternates: { canonical: url },
-    robots: isIndexableDay(date, clusters.length) ? undefined : { index: false, follow: true },
+    robots: isIndexableDay(date, clusters.filter((c) => !isPaperCluster(c)).length) ? undefined : { index: false, follow: true },
     openGraph: {
       type: 'article',
       title: `AI news on ${label}`,
@@ -129,6 +137,10 @@ export default async function DayPage({
 
   const clusters = await loadDay(date)
   if (clusters.length === 0) notFound()
+  // Pure-arXiv paper clusters shelve below the stories (PapersFold); counts,
+  // lead pick, and JSON-LD all work off the editorial stories only.
+  const stories = clusters.filter((c) => !isPaperCluster(c))
+  const papers = clusters.filter((c) => isPaperCluster(c))
 
   const { prev, next } = await adjacentDays(date)
 
@@ -141,15 +153,15 @@ export default async function DayPage({
   const ghostNum = String(d.getUTCDate()).padStart(2, '0')
 
   // Top story gets the hero feature card (like the homepage); the rest are cards.
-  const lead = clusters[0] && clusters[0].significance_score >= TOP_STORY_MIN ? clusters[0] : null
-  const rest = lead ? clusters.slice(1) : clusters
+  const lead = stories[0] && stories[0].significance_score >= TOP_STORY_MIN ? stories[0] : null
+  const rest = lead ? stories.slice(1) : stories
 
   const jsonLd = [
     {
       '@context': 'https://schema.org',
       '@type': 'ItemList',
       name: `AI news on ${label}`,
-      itemListElement: clusters.map((c, i) => ({
+      itemListElement: stories.map((c, i) => ({
         '@type': 'ListItem',
         position: i + 1,
         item: {
@@ -198,7 +210,8 @@ export default async function DayPage({
           AI news on {monthDay} <span className="dim">· {weekday}</span>
         </h1>
         <div className="anc-hero-sub">
-          <b>{clusters.length} {clusters.length === 1 ? 'story' : 'stories'}</b> — deduplicated
+          <b>{stories.length} {stories.length === 1 ? 'story' : 'stories'}</b>
+          {papers.length > 0 && <> · {papers.length} research {papers.length === 1 ? 'paper' : 'papers'}</>} — deduplicated
           across sources, ranked by significance, every source cited.
         </div>
 
@@ -207,6 +220,7 @@ export default async function DayPage({
           {rest.map((c) => (
             <StoryCard key={c.id} cluster={c} />
           ))}
+          <PapersFold papers={papers} defaultOpen={stories.length < 6} />
         </div>
 
         {(prev || next) && (

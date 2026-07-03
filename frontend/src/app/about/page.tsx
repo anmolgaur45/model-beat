@@ -32,7 +32,7 @@ const JSONLD = {
     founder: {
       '@type': 'Person',
       name: 'Anmol Gaur',
-      sameAs: ['https://github.com/anmolgaur45'],
+      sameAs: ['https://github.com/anmolgaur45', 'https://www.linkedin.com/in/anmolgaur45/', 'https://x.com/0xanmolgaur'],
     },
   },
 }
@@ -87,6 +87,8 @@ export default function AboutPage() {
             I&rsquo;m Anmol Gaur, a data engineer. I built Model Beat solo because I kept finding out
             about model releases from three-day-old tweets, and I run it as an independent project.
             The code, the pipeline, and the editorial calls are mine. You can find me on{' '}
+            <a href="https://www.linkedin.com/in/anmolgaur45/" rel="noopener noreferrer" target="_blank">LinkedIn</a>,{' '}
+            <a href="https://x.com/0xanmolgaur" rel="noopener noreferrer" target="_blank">X</a>, and{' '}
             <a href="https://github.com/anmolgaur45" rel="noopener noreferrer" target="_blank">GitHub</a>,
             or get the weekly digest at <Link href="/digest">themodelbeat.com/digest</Link>.
           </p>

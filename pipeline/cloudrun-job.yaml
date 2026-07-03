@@ -97,8 +97,11 @@ spec:
                       key: "1"
                 - name: VERTEX_PROJECT
                   value: "ai-news-calendar-493510"
+                # Apex domain, NOT the legacy .vercel.app host — that host 308s to
+                # the apex and notify_revalidate's httpx client doesn't follow
+                # redirects, so the old URL would silently no-op.
                 - name: REVALIDATE_URL
-                  value: "https://ai-news-calendar.vercel.app/api/revalidate"
+                  value: "https://themodelbeat.com/api/revalidate"
                 - name: CRON_SECRET
                   valueFrom:
                     secretKeyRef:

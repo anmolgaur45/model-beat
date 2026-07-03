@@ -9,7 +9,7 @@ import { ModelLandscape } from './ModelLandscape'
 
 const DEFAULT_HEAD = {
   kicker: 'Model tracker',
-  heading: 'Every AI model from the past year',
+  heading: 'Compare every AI model from the past year',
   intro:
     'The latest releases first — then rank by overall intelligence or by use case (coding, math, reasoning, agentic), with API pricing, context window, and the news coverage of each release.',
 }

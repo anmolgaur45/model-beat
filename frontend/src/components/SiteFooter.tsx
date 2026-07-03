@@ -21,6 +21,16 @@ export function SiteFooter() {
           <Link href="/privacy">Privacy Policy</Link>
         </nav>
 
+        <nav className="anc-footer-col" aria-label="Model rankings">
+          <h2>Rankings</h2>
+          <Link href="/models/best/overall">Best AI models</Link>
+          <Link href="/models/best/coding">Best for coding</Link>
+          <Link href="/models/best/math">Best for math</Link>
+          <Link href="/models/best/reasoning">Best for reasoning</Link>
+          <Link href="/models/best/agentic">Best for agentic tasks</Link>
+          <Link href="/models/best/value">Best value per dollar</Link>
+        </nav>
+
         <div className="anc-footer-col anc-footer-digest">
           <h2>The weekly digest</h2>
           <p>The week in AI models: top stories, price moves, deprecations. Thursdays, free.</p>

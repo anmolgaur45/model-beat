@@ -190,8 +190,9 @@ export default async function DayPage({
       <main className="anc-daywrap">
         <Link className="anc-day-back" href="/">← Back to the timeline</Link>
         <div className="anc-kicker">Daily archive</div>
+        {/* H1 targets "AI news on {date}", not the weekday. */}
         <h1 className="anc-date-heading">
-          {weekday} <span className="dim">— {monthDay}</span>
+          AI news on {monthDay} <span className="dim">· {weekday}</span>
         </h1>
         <div className="anc-hero-sub">
           <b>{clusters.length} {clusters.length === 1 ? 'story' : 'stories'}</b> — deduplicated

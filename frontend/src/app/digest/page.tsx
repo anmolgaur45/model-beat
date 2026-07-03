@@ -7,13 +7,14 @@ import { DigestForm } from '@/components/DigestForm'
 const SITE = SITE_URL
 
 export const metadata: Metadata = {
-  title: 'The Model Beat Digest — the week in AI models, once a week',
+  // absolute: the layout template appends "| Model Beat", which double-brands
+  title: { absolute: 'The Model Beat Digest: the week in AI models' },
   description:
     'A weekly email for people who build on LLMs: the stories that mattered, new models, price moves and deprecations from the Model Beat tracker. Free.',
   alternates: { canonical: `${SITE}/digest` },
   openGraph: {
     type: 'website',
-    title: 'The Model Beat Digest — the week in AI models, once a week',
+    title: 'The Model Beat Digest: the week in AI models',
     description:
       'The stories that mattered, new models, price moves and deprecations. One email a week, for people who build on LLMs.',
     url: `${SITE}/digest`,

@@ -124,17 +124,26 @@ export function ModelsLeaderboard({
 
   return (
     <div>
+      {/* Tabs are real anchors so /models/best/* pages get crawlable internal
+          links (they were sitemap-only orphans). Click is intercepted for the
+          instant client-side switch; the href is the progressive-enhancement
+          path crawlers and new-tab clicks follow. */}
       <div className="anc-lbtabs" role="tablist">
         {TABS.map((t) => (
-          <button
+          <Link
             key={t.key}
             role="tab"
             aria-selected={tab === t.key}
             className={`anc-lbtab ${tab === t.key ? 'is-active' : ''}`}
-            onClick={() => selectTab(t.key)}
+            href={t.key === 'newest' ? '/models' : `/models/best/${t.key}`}
+            onClick={(e) => {
+              if (e.metaKey || e.ctrlKey || e.shiftKey) return
+              e.preventDefault()
+              selectTab(t.key)
+            }}
           >
             {t.label}
-          </button>
+          </Link>
         ))}
       </div>
 

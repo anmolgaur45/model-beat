@@ -42,11 +42,33 @@ export function StoryCard({ cluster, showDate = false, scoreStyle = 'orb', highl
 
   return (
     <div className={`anc-card tier-${tier}${isOpen ? ' open' : ''}`}>
-      <button className="anc-card-head" onClick={() => setIsOpen((o) => !o)}>
+      {/* Head is a div (not <button>) so the headline can be a real <a> — the
+          permalink must be in the SSR HTML or the ~3k story pages are crawl
+          orphans. Clicking the headline navigates; anywhere else still toggles. */}
+      <div
+        className="anc-card-head"
+        role="button"
+        tabIndex={0}
+        onClick={() => setIsOpen((o) => !o)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            setIsOpen((o) => !o)
+          }
+        }}
+      >
         <ScoreBadge score={score} style={scoreStyle} />
 
         <span className="anc-cmain">
-          <h3>{highlightText(cluster.headline, highlight ?? '')}</h3>
+          <h3>
+            <Link
+              className="anc-ctitle"
+              href={storyPath(cluster)}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {highlightText(cluster.headline, highlight ?? '')}
+            </Link>
+          </h3>
           <span className="anc-cmeta">
             <span className="cat">{label}</span>
             <span>·</span>
@@ -69,7 +91,7 @@ export function StoryCard({ cluster, showDate = false, scoreStyle = 'orb', highl
         <svg className="anc-chev" width="14" height="14" viewBox="0 0 14 14" fill="none">
           <path d="M3 5l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
-      </button>
+      </div>
 
       <SharePopover headline={cluster.headline} summary={cluster.summary ?? null} path={storyPath(cluster)} className="anc-cshare" />
 

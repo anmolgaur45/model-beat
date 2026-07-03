@@ -29,9 +29,16 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   }))
 
   // Per-model pages (Phase K) — one URL per canonical model in the registry.
+  // Same quality gate as the page's robots meta: registry stubs with no
+  // benchmarks, no pricing, and no linked news stay out until data arrives.
   const modelRows = await sql<{ slug: string; updated_at: string }[]>`
-    SELECT slug, updated_at FROM models
+    SELECT slug, updated_at FROM models m
     WHERE released_at >= now() - interval '1 year'
+      AND (
+        price_in IS NOT NULL
+        OR EXISTS (SELECT 1 FROM model_benchmarks mb WHERE mb.model_id = m.id)
+        OR EXISTS (SELECT 1 FROM model_clusters mc WHERE mc.model_id = m.id)
+      )
     ORDER BY released_at DESC NULLS LAST
   `
   const modelPages: MetadataRoute.Sitemap = modelRows.map((m) => ({

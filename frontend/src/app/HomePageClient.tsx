@@ -214,8 +214,11 @@ export default function HomePageClient({ initialDate, initialClusters, initialTo
       {timelineMode && (
         <header className="anc-hero" suppressHydrationWarning>
           <div className="anc-kicker">The AI news that actually mattered</div>
+          {/* H1 carries the topic ("AI news"), not a bare date — the homepage's
+              one heading slot shouldn't be spent on "Today". */}
           <h1 className="anc-date-heading">
-            {heroDisplay} <span className="dim">— {heroSub}</span>
+            {heroDisplay === 'Today' ? 'AI news today' : `AI news · ${heroDisplay}`}{' '}
+            <span className="dim">· {heroSub}</span>
           </h1>
           <div className="anc-hero-sub">
             <b>{(timelineData ?? []).length} {(timelineData ?? []).length === 1 ? 'story' : 'stories'}</b>

@@ -1,5 +1,6 @@
 import sql from '@/lib/db'
 import { SITE_URL as SITE } from '@/lib/site'
+import { storyPath } from '@/lib/story'
 
 export const revalidate = 3600
 
@@ -34,8 +35,12 @@ export async function GET() {
   const items = clusters
     .map((c) => {
       const a = byCluster.get(c.id)
-      const link = a?.source_url ?? SITE
-      const desc = c.summary ?? a?.body_excerpt ?? ''
+      // Items link to our story permalink (schema + all sources), not the
+      // external publisher — the feed should hand engines our citable page.
+      const link = `${SITE}${storyPath(c)}`
+      const desc =
+        (c.summary ?? a?.body_excerpt ?? '') +
+        (a?.source_url ? ` (Source: ${a.source_url})` : '')
       const pub = new Date(c.first_published_at).toUTCString()
       return (
         `<item>` +

@@ -117,7 +117,9 @@ export async function generateMetadata({
   const isCanonical = `${parsed[0]}-vs-${parsed[1]}` === canonicalKey
   const indexable = isCanonical && (await comparePairKeys()).has(canonicalKey)
 
-  const title = `${a.name} vs ${b.name}: benchmarks, pricing & specs`
+  // Short suffix: SERPs truncate ~60 chars and the second model's name is
+  // the differentiator that must survive.
+  const title = `${a.name} vs ${b.name}: benchmarks & pricing`
   const facts: string[] = []
   if (eci(a) != null && eci(b) != null) facts.push(`ECI ${Math.round(eci(a)!)} vs ${Math.round(eci(b)!)}`)
   const desc = `Compare ${a.name} and ${b.name} side by side — ${facts.length ? `${facts.join(', ')}, ` : ''}pricing, context window, and benchmark scores for coding, math, and reasoning. See which model wins.`

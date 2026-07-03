@@ -236,13 +236,21 @@ export async function generateMetadata({
   if (!SLUG_RE.test(slug)) return {}
   const model = await loadModel(slug).catch(() => null)
   if (!model) return {}
-  const title = `${model.name} — benchmarks, pricing & specs`
+  const title = `${model.name}: benchmarks, pricing & specs`
   const description = metaDescription(model)
   const url = `${SITE}/models/${slug}`
+  // Quality gate (mirrors day/story/compare): auto-created registry stubs with
+  // no benchmarks, no pricing, and no news are noindexed until data arrives.
+  // The sitemap applies the same rule; the page flips to index automatically.
+  const hasData =
+    (model.benchmarks?.length ?? 0) > 0 ||
+    model.price_in != null ||
+    (model.coverage_count ?? 0) > 0
   return {
     title,
     description,
     alternates: { canonical: url },
+    ...(hasData ? {} : { robots: { index: false, follow: true } }),
     openGraph: {
       type: 'article',
       title,

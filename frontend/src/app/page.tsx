@@ -2,9 +2,12 @@ import { cache } from 'react'
 import type { Metadata } from 'next'
 import { appRouter } from '@/server/routers/_app'
 import { createContext } from '@/server/trpc'
-import type { Model } from '@/types/article'
+import type { Cluster, Model } from '@/types/article'
 import type { TopModel } from '@/components/HeroModelBand'
 import { isModelAvailable } from '@/lib/modelStatus'
+import { SITE_URL } from '@/lib/site'
+import { storyPath } from '@/lib/story'
+import { isPaperCluster } from '@/lib/papers'
 import HomePageClient from './HomePageClient'
 
 // ISR safety net; the client island also refetches, so users stay current and
@@ -43,8 +46,11 @@ const loadHome = cache(async () => {
 })
 
 export async function generateMetadata(): Promise<Metadata> {
-  const { clusters } = await loadHome().catch(() => ({ clusters: [] as { headline: string }[] }))
-  const top = clusters.slice(0, 3).map((c) => c.headline).join(' · ')
+  const { clusters } = await loadHome().catch(() => ({ clusters: [] as Cluster[] }))
+  // Editorial stories lead the description; shelved paper clusters only when
+  // that's all the day has (same rule as the day pages).
+  const eds = clusters.filter((c) => !isPaperCluster(c))
+  const top = (eds.length > 0 ? eds : clusters).slice(0, 3).map((c) => c.headline).join(' · ')
   const description = top
     ? `Today's top AI news: ${top}`.slice(0, 155)
     : 'Daily AI news, deduplicated across sources and ranked by significance, plus a model tracker with benchmarks and pricing.'
@@ -58,14 +64,50 @@ export async function generateMetadata(): Promise<Metadata> {
   }
 }
 
+// Ranked-list schema for the homepage: "today's top N" is exactly the shape
+// answer engines quote for fresh queries. Editorial stories only (papers are
+// shelved in the UI); the week list mirrors the top-stories ticker.
+type RankedStory = { id: string; headline: string; first_published_at: string }
+function rankedListJsonLd(name: string, stories: RankedStory[]) {
+  if (stories.length === 0) return null
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'ItemList',
+    name,
+    itemListElement: stories.map((c, i) => ({
+      '@type': 'ListItem',
+      position: i + 1,
+      item: {
+        '@type': 'NewsArticle',
+        headline: c.headline,
+        datePublished: c.first_published_at,
+        url: `${SITE_URL}${storyPath(c)}`,
+        publisher: { '@type': 'NewsMediaOrganization', name: 'Model Beat' },
+      },
+    })),
+  }
+}
+
 export default async function HomePage() {
   const { date, clusters, topStories, topModels } = await loadHome()
+  const jsonLd = [
+    rankedListJsonLd('Top AI news today', clusters.filter((c) => !isPaperCluster(c)).slice(0, 10)),
+    rankedListJsonLd('Top AI stories this week', topStories.slice(0, 6)),
+  ].filter(Boolean)
   return (
-    <HomePageClient
-      initialDate={date}
-      initialClusters={clusters}
-      initialTopStories={topStories}
-      initialTopModels={topModels}
-    />
+    <>
+      {jsonLd.length > 0 && (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        />
+      )}
+      <HomePageClient
+        initialDate={date}
+        initialClusters={clusters}
+        initialTopStories={topStories}
+        initialTopModels={topModels}
+      />
+    </>
   )
 }

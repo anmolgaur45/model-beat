@@ -3,6 +3,8 @@
 /* ─── Aurora design system ──────────────────────────────────────────────────── */
 
 :root {
+  /* Native UI (scrollbars, selects, autofill, form controls) follows the theme. */
+  color-scheme: dark;
   --hue: 150;
   --hue2: 195;
   --font-display: var(--font-bricolage, 'Bricolage Grotesque', sans-serif);
@@ -19,7 +21,8 @@
   --bg-pill: rgba(255, 255, 255, 0.035);
   --text: #f2f3f5;
   --text2: #a3a8b3;
-  --text3: #5f6470;
+  --text3: #7e8494; /* 5.39:1 on --bg; the old #5f6470 was 3.40:1, failing AA on meta text */
+  --danger: #ff6b6b; /* 7.26:1 on --bg */
   --line: rgba(255, 255, 255, 0.08);
   --line2: rgba(255, 255, 255, 0.14);
   --accent: oklch(0.78 0.19 var(--hue));
@@ -27,6 +30,9 @@
   --accent-text: oklch(0.8 0.17 var(--hue));
   --accent-dim: oklch(0.78 0.19 var(--hue) / 0.13);
   --accent-line: oklch(0.78 0.19 var(--hue) / 0.35);
+  /* Full-strength accent for glows/tinted borders (mix with transparency at the
+     use site). Per-theme: the dark value is a pale mint that vanishes on white. */
+  --accent-strong: oklch(0.78 0.19 var(--hue));
   --on-accent: #06070a;
   --glow-a: oklch(0.78 0.19 var(--hue) / 0.2);
   --glow-b: oklch(0.75 0.14 var(--hue2) / 0.15);
@@ -45,6 +51,10 @@
 }
 
 [data-theme="light"] {
+  color-scheme: light;
+  /* Palette reverted to the pre-audit original on user preference (2026-07-04).
+     Known tradeoffs, accepted: text3 is 2.96:1 and white-on-accent is 3.39:1
+     (both below AA); component glows reuse the dark theme's pale-mint accent. */
   --bg: #f5f6f8;
   --bg-nav: rgba(255, 255, 255, 0.65);
   --bg-nav-line: rgba(10, 20, 30, 0.08);
@@ -55,6 +65,7 @@
   --text: #14171c;
   --text2: #555c68;
   --text3: #8a909c;
+  --danger: #c03d3d; /* kept: form-error red was 2.57:1 before */
   --line: rgba(10, 20, 30, 0.09);
   --line2: rgba(10, 20, 30, 0.16);
   --accent: oklch(0.62 0.17 var(--hue));
@@ -62,6 +73,9 @@
   --accent-text: oklch(0.5 0.16 var(--hue));
   --accent-dim: oklch(0.62 0.17 var(--hue) / 0.13);
   --accent-line: oklch(0.62 0.17 var(--hue) / 0.4);
+  /* Matches the dark value the original hardcoded literals used, so the
+     tokenized glow/border sites render exactly as they did pre-audit. */
+  --accent-strong: oklch(0.78 0.19 var(--hue));
   --on-accent: #ffffff;
   --glow-a: oklch(0.78 0.16 var(--hue) / 0.2);
   --glow-b: oklch(0.78 0.12 var(--hue2) / 0.18);
@@ -121,7 +135,21 @@ a { cursor: pointer; text-decoration: none; color: inherit; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .aurora-blob, .ticker-track, .score-orb-glow { animation: none !important; }
+  .aurora-blob, .ticker-track, .score-orb-glow,
+  .anc-shimmer, .anc-ticker-pulse, .anc-orb-ring::before { animation: none !important; }
+}
+
+/* Keyboard focus: one visible ring everywhere (the UA default clashes with the
+   Aurora look and half the chrome suppressed it entirely). Components with a
+   richer focus treatment (search pill, email inputs) override below. */
+:focus-visible {
+  outline: 2px solid var(--accent-text);
+  outline-offset: 2px;
+}
+.anc-search input:focus-visible { outline: none; }
+.anc-search:focus-within {
+  border-color: var(--accent-line);
+  box-shadow: 0 0 0 3px var(--accent-dim);
 }
 
 /* ─── Aurora background ─────────────────────────────────────────────────────── */
@@ -534,13 +562,11 @@ a.anc-tick:hover { color: var(--accent-text); }
 .anc-story-relcard .rc-head { font-size: 14px; font-weight: 650; line-height: 1.35; color: var(--text); }
 .anc-story-relcard .rc-meta { font-size: 12px; color: var(--text3); }
 
-/* Share controls (story page) */
-.anc-sharewrap { margin: 22px 0 0; }
-.anc-share { display: flex; gap: 8px; flex-wrap: wrap; }
-.anc-share-btn { display: inline-flex; align-items: center; height: 32px; padding: 0 14px; border-radius: 9px; border: 1px solid var(--line2); background: var(--bg-card-strong); color: var(--text2); font-size: 12.5px; font-weight: 550; cursor: pointer; transition: color 0.15s, border-color 0.15s; }
-.anc-share-btn:hover { color: var(--accent-text); border-color: var(--accent-line); }
-.anc-share-btn.copied { color: var(--accent-text); border-color: var(--accent-line); }
-.anc-share-note { font-size: 12.5px; color: var(--accent-text); margin: 9px 0 0; }
+/* Story page: share popover trigger + the day-archive link in the meta row */
+.anc-story-share { display: inline-flex; align-items: center; gap: 7px; height: 32px; padding: 0 14px; margin: 18px 0 0; border-radius: 9px; border: 1px solid var(--line2); background: var(--bg-card-strong); color: var(--text2); font-size: 12.5px; font-weight: 550; cursor: pointer; transition: color 0.15s, border-color 0.15s; }
+.anc-story-share:hover { color: var(--accent-text); border-color: var(--accent-line); }
+.anc-story-dayline { font-size: 12.5px; color: var(--text3); }
+.anc-story-dayline:hover { color: var(--accent-text); text-decoration: underline; }
 
 .anc-read.anc-full { color: var(--accent-text); font-weight: 600; }
 
@@ -571,7 +597,7 @@ a.anc-tick:hover { color: var(--accent-text); }
 .anc-wl-btn { align-self: flex-start; padding: 11px 20px; border: 0; border-radius: 11px; background: var(--accent); color: #06120c; font-size: 14px; font-weight: 700; cursor: pointer; transition: opacity 0.15s ease; }
 .anc-wl-btn:hover { opacity: 0.9; }
 .anc-wl-btn:disabled { opacity: 0.6; cursor: default; }
-.anc-wl-err { color: #ff6b6b; font-size: 13px; margin: 2px 0 0; }
+.anc-wl-err { color: var(--danger); font-size: 13px; margin: 2px 0 0; }
 .anc-wl-success { display: flex; flex-direction: column; gap: 4px; padding: 18px 20px; border: 1px solid var(--accent-line); border-radius: 12px; background: var(--accent-dim); max-width: 460px; }
 .anc-wl-success strong { font-size: 15px; color: var(--text); }
 .anc-wl-success span { font-size: 13.5px; color: var(--text2); }
@@ -595,7 +621,10 @@ a.anc-tick:hover { color: var(--accent-text); }
 .anc-hero {
   position: relative;
   z-index: 2;
-  padding: 34px 56px 8px;
+  /* Lives INSIDE the feed column (see HomePageClient): the H1, sub, catch-up
+     and pills inherit the story cards' left edge, and the date rail beside the
+     feed starts level with the heading. Horizontal padding comes from .anc-body. */
+  padding: 8px 0 8px;
 }
 .anc-kicker {
   font-family: var(--font-mono);
@@ -635,20 +664,23 @@ a.anc-tick:hover { color: var(--accent-text); }
   font-size: 13px;
   font-weight: 550;
   color: var(--accent-text);
-  background: var(--accent-soft, oklch(0.78 0.19 var(--hue) / 0.1));
-  border: 1px solid var(--accent-line, oklch(0.78 0.19 var(--hue) / 0.3));
+  background: color-mix(in srgb, var(--accent-strong) 10%, transparent);
+  border: 1px solid var(--accent-line);
   cursor: pointer;
   transition: background 0.15s, border-color 0.15s, transform 0.15s;
 }
-.anc-catchup:hover { background: oklch(0.78 0.19 var(--hue) / 0.16); transform: translateY(-1px); }
+.anc-catchup:hover { background: color-mix(in srgb, var(--accent-strong) 16%, transparent); transform: translateY(-1px); }
 /* ── Homepage model-intelligence band ─────────────────────────────────────── */
-.anc-hband { max-width: 1100px; margin: 16px auto 0; padding: 20px 22px; border: 1px solid var(--line); border-radius: 16px; background: linear-gradient(180deg, var(--bg-card-strong), var(--bg-card)); display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 24px; align-items: center; }
+/* Shares the page grid: same 1100px axis as hero/body/footer (24px gutters).
+   position/z-index lift it above the absolutely-positioned ghost date number,
+   which otherwise paints its stroke over the leaderboard's score column. */
+.anc-hband { position: relative; z-index: 2; max-width: 1100px; width: calc(100% - 48px); margin: 16px auto 0; padding: 20px 22px; border: 1px solid var(--line); border-radius: 16px; background: linear-gradient(180deg, var(--bg-card-strong), var(--bg-card)); display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 24px; align-items: center; }
 .anc-hband-title { font-family: var(--font-display); font-weight: 700; font-size: clamp(18px, 2.4vw, 23px); letter-spacing: -0.02em; margin: 6px 0 0; }
 .anc-hband-sub { font-size: 13.5px; line-height: 1.5; color: var(--text2); margin: 7px 0 0; max-width: 440px; }
 .anc-hband-cta { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
 .anc-hband-btn { display: inline-flex; align-items: center; height: 34px; padding: 0 15px; border-radius: 10px; border: 1px solid var(--line2); background: var(--bg-card-strong); color: var(--text); font-size: 13px; font-weight: 550; transition: color 0.15s, border-color 0.15s, transform 0.15s; }
 .anc-hband-btn:hover { border-color: var(--accent-line); color: var(--accent-text); transform: translateY(-1px); }
-.anc-hband-btn.primary { border-color: transparent; color: var(--on-accent); background: linear-gradient(120deg, var(--accent), var(--accent2)); box-shadow: 0 5px 18px oklch(0.78 0.19 var(--hue) / 0.28); }
+.anc-hband-btn.primary { border-color: transparent; color: var(--on-accent); background: linear-gradient(120deg, var(--accent), var(--accent2)); box-shadow: 0 5px 18px color-mix(in srgb, var(--accent-strong) 28%, transparent); }
 .anc-hband-btn.primary:hover { color: var(--on-accent); opacity: 0.93; }
 .anc-hband-panel { border-left: 1px solid var(--line); padding-left: 22px; }
 .anc-hband-cap { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text3); margin-bottom: 8px; }
@@ -661,11 +693,28 @@ a.anc-tick:hover { color: var(--accent-text); }
 .anc-hband-list .vnd { font-size: 12px; color: var(--text3); }
 .anc-hband-list .sc { margin-left: auto; font-family: var(--font-mono); font-size: 13px; font-weight: 700; color: var(--accent-text); }
 @media (max-width: 720px) {
-  .anc-hband { grid-template-columns: 1fr; gap: 16px; padding: 18px; }
-  .anc-hband-panel { border-left: 0; border-top: 1px solid var(--line); padding-left: 0; padding-top: 14px; }
+  /* Phones: collapse the band to its entry point (title + CTAs). The full
+     5-row leaderboard + sub pushed the first story ~2.5 screens down; the
+     list is one tap away behind "Open the leaderboard". */
+  .anc-hband { grid-template-columns: 1fr; gap: 0; padding: 16px 18px; }
+  .anc-hband-sub { display: none; }
+  .anc-hband-panel { display: none; }
 }
 
 .anc-cats { display: flex; gap: 8px; margin-top: 20px; flex-wrap: wrap; }
+@media (max-width: 720px) {
+  /* One swipeable row instead of 3 wrapped rows of pills (~112px of chrome);
+     the right-edge fade hints at more, like the ticker's mask. */
+  .anc-cats {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    mask-image: linear-gradient(90deg, #000 calc(100% - 36px), transparent);
+    -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 36px), transparent);
+  }
+  .anc-cats::-webkit-scrollbar { display: none; }
+  .anc-cats .anc-pill { flex-shrink: 0; }
+}
 
 /* ─── Model release tracker (/models) ────────────────────────────────────────── */
 
@@ -724,6 +773,15 @@ a.anc-tick:hover { color: var(--accent-text); }
   color: var(--text3);
   border-bottom-color: var(--line2);
 }
+/* 200-row leaderboard: the column labels (and sort state) stay pinned while
+   scrolling — same frosted treatment as .m2-header. Rows glow on hover so the
+   eye can track across five columns. */
+.anc-lbtable .anc-mhead {
+  position: sticky; top: 0; z-index: 5;
+  background: color-mix(in srgb, var(--bg) 72%, transparent);
+  backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+}
+.anc-lbrow:hover { background: var(--bg-pill); border-radius: 10px; }
 /* Right-align the numeric/value column headers to match their cells. */
 .anc-mhead span:nth-child(n + 4) { text-align: right; }
 .anc-mdate { font-family: var(--font-mono); font-size: 12.5px; color: var(--text2); white-space: nowrap; }
@@ -900,26 +958,29 @@ a.anc-tick:hover { color: var(--accent-text); }
 /* Compare view (Phase O3) */
 .anc-cmpwrap { max-width: 1000px; margin: 0 auto; padding: 92px 24px 80px; }
 .anc-cmp-scroll { overflow-x: auto; margin: 22px -4px 0; padding: 0 4px 6px; }
-.anc-cmp { min-width: 520px; display: flex; flex-direction: column; }
-.anc-cmp-row {
-  display: grid; gap: 14px; align-items: center;
-  padding: 10px 6px; border-bottom: 1px solid var(--line);
+/* Semantic <table> (machine-liftable head-to-head); visuals match the old grid. */
+.anc-cmp { min-width: 520px; width: 100%; border-collapse: collapse; }
+.anc-cmp th, .anc-cmp td {
+  text-align: left; font-weight: 400; vertical-align: middle;
+  padding: 10px 8px; border-bottom: 1px solid var(--line);
 }
-.anc-cmp-head { padding-top: 4px; border-bottom-color: var(--line2); align-items: end; }
-.anc-cmp-rl { font-size: 12.5px; color: var(--text3); }
-.anc-cmp-modelhd { display: flex; flex-direction: column; gap: 3px; }
-.anc-cmp-modelhd a { font-size: 15px; font-weight: 600; color: var(--text); line-height: 1.3; }
+.anc-cmp-head th { border-bottom-color: var(--line2); vertical-align: bottom; padding-top: 4px; }
+.anc-cmp-rl { font-size: 12.5px; color: var(--text3); min-width: 168px; }
+/* Row labels stay visible while the table scrolls horizontally on phones. */
+.anc-cmp th.anc-cmp-rl, .anc-cmp-head th:first-child {
+  position: sticky; left: 0; z-index: 1; background: var(--bg);
+}
+.anc-cmp-modelhd { min-width: 118px; }
+.anc-cmp-modelhd a { display: block; font-size: 15px; font-weight: 600; color: var(--text); line-height: 1.3; }
 .anc-cmp-modelhd a:hover { color: var(--accent-text); text-decoration: underline; }
-.anc-cmp-modelmeta { font-size: 11.5px; color: var(--text3); }
-.anc-cmp-section {
-  display: grid; gap: 14px; margin-top: 18px; padding: 0 6px 6px;
-}
-.anc-cmp-sectlabel {
+.anc-cmp-modelmeta { display: block; margin-top: 3px; font-size: 11.5px; color: var(--text3); }
+.anc-cmp-section th {
   font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.12em;
   text-transform: uppercase; color: var(--text3);
+  padding: 20px 8px 6px; border-bottom: 0;
 }
 .anc-cmp-cell {
-  font-family: var(--font-mono); font-size: 13.5px; color: var(--text2);
+  font-family: var(--font-mono); font-size: 13.5px; color: var(--text2); min-width: 100px;
 }
 .anc-cmp-cell.is-best { color: var(--accent-text); font-weight: 700; }
 .anc-cmp-legend { font-size: 12px; color: var(--text3); line-height: 1.55; max-width: 620px; margin: 22px 0 0; }
@@ -1121,7 +1182,9 @@ a.anc-tick:hover { color: var(--accent-text); }
 .ch-cols-x span { flex: 1; min-width: 0; text-align: center; font-family: var(--font-mono); font-size: 10px; color: var(--text3); white-space: nowrap; overflow: hidden; }
 
 @media (max-width: 720px) {
-  .ch-legend { display: none; }
+  /* Keep the legend on phones — the dots stay color-coded, so hiding the key
+     broke comprehension of the open-vs-proprietary chart. */
+  .ch-legend { margin-left: 0; padding-top: 0; flex-wrap: wrap; gap: 8px 14px; }
   .ch-head { flex-wrap: wrap; }
   .ch-bar-name { width: 92px; font-size: 12px; }
   .ch-bar-val { width: 46px; }
@@ -1139,7 +1202,7 @@ a.anc-tick:hover { color: var(--accent-text); }
   --bar-mid: oklch(0.78 0.15 75);
   --bar-low: oklch(0.7 0.19 38);
   --seg-off: rgba(255, 255, 255, 0.07);
-  --m2-glow: oklch(0.78 0.19 var(--hue) / 0.16);
+  --m2-glow: color-mix(in srgb, var(--accent-strong) 16%, transparent);
 }
 [data-theme="light"] {
   --bar-high: oklch(0.6 0.16 150);
@@ -1165,7 +1228,7 @@ a.anc-tick:hover { color: var(--accent-text); }
 .m2-spacer { flex: 1; }
 .m2-iconbtn { width: 36px; height: 36px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg-pill); color: var(--text2); display: grid; place-items: center; }
 .m2-iconbtn:hover { color: var(--text); border-color: var(--line2); }
-.m2-cta { display: inline-flex; align-items: center; height: 36px; padding: 0 18px; border-radius: 10px; border: 0; white-space: nowrap; background: linear-gradient(120deg, var(--accent), var(--accent2)); color: var(--on-accent); font-weight: 600; font-size: 13px; box-shadow: 0 4px 20px oklch(0.78 0.19 var(--hue) / 0.3); }
+.m2-cta { display: inline-flex; align-items: center; height: 36px; padding: 0 18px; border-radius: 10px; border: 0; white-space: nowrap; background: linear-gradient(120deg, var(--accent), var(--accent2)); color: var(--on-accent); font-weight: 600; font-size: 13px; box-shadow: 0 4px 20px color-mix(in srgb, var(--accent-strong) 30%, transparent); }
 
 /* shell */
 .m2-wrap { position: relative; z-index: 2; max-width: 1140px; margin: 0 auto; padding: 36px 28px 80px; }
@@ -1185,7 +1248,7 @@ a.anc-tick:hover { color: var(--accent-text); }
   width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; flex-shrink: 0;
   font-family: var(--font-display); font-weight: 750; font-size: 14px; color: var(--on-accent);
   background: linear-gradient(140deg, var(--accent), var(--accent2));
-  box-shadow: 0 4px 16px oklch(0.78 0.19 var(--hue) / 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--accent-strong) 35%, transparent), inset 0 1px 0 rgba(255, 255, 255, 0.3);
 }
 .m2-avatar.lg { width: 50px; height: 50px; border-radius: 14px; font-size: 22px; margin-top: 3px; }
 .m2-name { margin: 0; flex: 1; min-width: 0; font-family: var(--font-display); font-weight: 750; font-size: clamp(27px, 3.4vw, 38px); letter-spacing: -0.03em; line-height: 1.06; text-wrap: balance; }
@@ -1203,8 +1266,8 @@ a.anc-tick:hover { color: var(--accent-text); }
 .m2-actions { display: flex; gap: 10px; flex-shrink: 0; }
 .m2-btn { display: inline-flex; align-items: center; gap: 9px; height: 42px; padding: 0 18px; border-radius: 11px; border: 1px solid var(--line2); background: var(--bg-card-strong); color: var(--text); font-weight: 550; font-size: 14px; }
 .m2-btn:hover { border-color: var(--text3); background: var(--bg-pill); }
-.m2-btn.primary { border-color: transparent; color: var(--on-accent); background: linear-gradient(120deg, var(--accent), var(--accent2)); box-shadow: 0 6px 22px oklch(0.78 0.19 var(--hue) / 0.32); }
-.m2-btn.watch { border-color: transparent; color: #06120c; background: var(--accent); box-shadow: 0 6px 22px oklch(0.78 0.19 var(--hue) / 0.3); }
+.m2-btn.primary { border-color: transparent; color: var(--on-accent); background: linear-gradient(120deg, var(--accent), var(--accent2)); box-shadow: 0 6px 22px color-mix(in srgb, var(--accent-strong) 32%, transparent); }
+.m2-btn.watch { border-color: transparent; color: #06120c; background: var(--accent); box-shadow: 0 6px 22px color-mix(in srgb, var(--accent-strong) 30%, transparent); }
 .m2-btn.watch:hover { background: var(--accent); opacity: 0.92; }
 
 /* spec ribbon */
@@ -1247,11 +1310,13 @@ a.anc-tick:hover { color: var(--accent-text); }
 .m2-sec-sub { margin: 14px 0 0; color: var(--text2); font-size: 14px; line-height: 1.6; max-width: 680px; }
 
 /* index gauges */
-.m2-gauges { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 24px; }
+/* auto-fit, not a fixed 3: a model with one populated index renders one
+   full-width gauge instead of a card with two blank grid cells. */
+.m2-gauges { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 14px; margin-top: 24px; }
 .m2-gauge { border-radius: 18px; border: 1px solid var(--line); background: radial-gradient(320px 150px at 50% 0, var(--m2-glow), transparent 70%), var(--bg-card-strong); padding: 22px 20px 20px; text-align: center; }
 .m2-gauge .dial { position: relative; width: 116px; height: 116px; margin: 0 auto; }
 .m2-gauge .dial svg { position: absolute; inset: 0; }
-.m2-gauge .dial .gv { position: absolute; inset: 0; display: grid; place-items: center; font-family: var(--font-display); font-weight: 800; font-size: 26px; letter-spacing: -0.03em; color: var(--accent-text); text-shadow: 0 0 16px oklch(0.78 0.19 var(--hue) / 0.2); }
+.m2-gauge .dial .gv { position: absolute; inset: 0; display: grid; place-items: center; font-family: var(--font-display); font-weight: 800; font-size: 26px; letter-spacing: -0.03em; color: var(--accent-text); text-shadow: 0 0 16px color-mix(in srgb, var(--accent-strong) 20%, transparent); }
 .m2-gauge .lbl { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; margin-top: 10px; }
 .m2-gauge .prov { font-size: 12px; color: var(--text3); margin-top: 3px; }
 .m2-rankchip { display: inline-flex; align-items: center; gap: 7px; margin-top: 14px; padding: 6px 13px; border-radius: 999px; background: oklch(0.75 0.14 var(--hue2) / 0.12); border: 1px solid oklch(0.75 0.14 var(--hue2) / 0.3); font-size: 12px; color: var(--text2); }
@@ -1351,10 +1416,10 @@ a.anc-tick:hover { color: var(--accent-text); }
   font-weight: 600;
   background: linear-gradient(120deg, var(--accent), var(--accent2));
   border-color: transparent;
-  box-shadow: 0 4px 24px oklch(0.78 0.19 var(--hue) / 0.35);
+  box-shadow: 0 4px 24px color-mix(in srgb, var(--accent-strong) 35%, transparent);
 }
 @media (max-width: 960px) {
-  .anc-hero { padding: 28px 24px 6px; }
+  .anc-hero { padding: 4px 0 6px; }
 }
 
 /* ─── Main body layout ───────────────────────────────────────────────────────── */
@@ -1364,7 +1429,10 @@ a.anc-tick:hover { color: var(--accent-text); }
   z-index: 2;
   display: flex;
   gap: 36px;
-  padding: 24px 56px 48px;
+  /* Same 1100px container as the hero and model card: one left axis. */
+  max-width: 1148px;
+  margin-inline: auto;
+  padding: 24px 24px 48px;
 }
 .anc-feed { flex: 1; min-width: 0; max-width: 880px; }
 @media (max-width: 960px) {
@@ -1445,10 +1513,14 @@ a.anc-tick:hover { color: var(--accent-text); }
   display: none;
   gap: 8px;
   overflow-x: auto;
-  padding: 14px 24px 2px;
+  /* Inside the feed column now — .anc-body provides the horizontal gutter. */
+  padding: 14px 0 2px;
   position: relative;
   z-index: 2;
   scrollbar-width: none;
+  /* Scroll affordance: cleanly-cut pills were the only hint that 6 more days exist. */
+  mask-image: linear-gradient(90deg, #000 calc(100% - 36px), transparent);
+  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 36px), transparent);
 }
 .anc-datestrip::-webkit-scrollbar { display: none; }
 @media (max-width: 960px) { .anc-datestrip { display: flex; } }
@@ -1528,7 +1600,7 @@ a.anc-tick:hover { color: var(--accent-text); }
   background:
     radial-gradient(520px 240px at 100% 0%, var(--tint-high), transparent 70%) padding-box,
     linear-gradient(var(--bg-card-strong), var(--bg-card)) padding-box,
-    linear-gradient(120deg, oklch(0.78 0.19 var(--hue) / 0.5), var(--line2) 40%, oklch(0.75 0.14 var(--hue2) / 0.4)) border-box;
+    linear-gradient(120deg, color-mix(in srgb, var(--accent-strong) 50%, transparent), var(--line2) 40%, oklch(0.75 0.14 var(--hue2) / 0.4)) border-box;
   border: 1px solid transparent;
   box-shadow: var(--shadow-card);
   display: flex;
@@ -1549,7 +1621,7 @@ a.anc-tick:hover { color: var(--accent-text); }
   position: absolute;
   inset: -14px;
   border-radius: 50%;
-  background: radial-gradient(circle, oklch(0.78 0.19 var(--hue) / 0.3), transparent 70%);
+  background: radial-gradient(circle, color-mix(in srgb, var(--accent-strong) 30%, transparent), transparent 70%);
   filter: blur(8px);
   animation: anc-pulse-orb 3.2s ease-in-out infinite;
 }
@@ -1629,7 +1701,7 @@ a.anc-src:hover { color: var(--accent-text); }
   background:
     radial-gradient(280px 130px at 0% 50%, var(--tint-high), transparent 70%),
     linear-gradient(180deg, var(--bg-card-strong), var(--bg-card));
-  border-color: oklch(0.78 0.19 var(--hue) / 0.25);
+  border-color: color-mix(in srgb, var(--accent-strong) 25%, transparent);
 }
 [data-theme="light"] .anc-card.tier-high { border-color: oklch(0.62 0.17 var(--hue) / 0.35); }
 .anc-card.tier-notable {
@@ -1637,7 +1709,7 @@ a.anc-src:hover { color: var(--accent-text); }
     radial-gradient(240px 110px at 0% 50%, var(--tint-notable), transparent 70%),
     linear-gradient(180deg, var(--bg-card-strong), var(--bg-card));
 }
-.anc-card.tier-high.open { border-color: oklch(0.78 0.19 var(--hue) / 0.3); }
+.anc-card.tier-high.open { border-color: color-mix(in srgb, var(--accent-strong) 30%, transparent); }
 .anc-ctitle { color: inherit; text-decoration: none; }
 .anc-ctitle:hover { text-decoration: underline; text-underline-offset: 3px; }
 
@@ -1735,10 +1807,10 @@ a.anc-src:hover { color: var(--accent-text); }
 .anc-cscore.style-orb { width: 42px; height: 42px; font-size: 13px; color: var(--text2); }
 .anc-cscore.style-orb svg { position: absolute; inset: 0; transform: rotate(-90deg); }
 .anc-cscore.style-orb.high { color: var(--accent-text); }
-.anc-cscore.style-orb.high svg { filter: drop-shadow(0 0 6px oklch(0.78 0.19 var(--hue) / 0.55)); }
+.anc-cscore.style-orb.high svg { filter: drop-shadow(0 0 6px color-mix(in srgb, var(--accent-strong) 55%, transparent)); }
 /* tile */
 .anc-cscore.style-tile { width: 44px; height: 44px; border-radius: 12px; font-size: 14px; }
-.anc-cscore.style-tile.high { background: var(--accent-dim); color: var(--accent-text); border: 1px solid var(--accent-line); box-shadow: 0 0 18px oklch(0.78 0.19 var(--hue) / 0.13); }
+.anc-cscore.style-tile.high { background: var(--accent-dim); color: var(--accent-text); border: 1px solid var(--accent-line); box-shadow: 0 0 18px color-mix(in srgb, var(--accent-strong) 13%, transparent); }
 .anc-cscore.style-tile.notable { color: var(--accent-text); border: 1px solid var(--accent-line); }
 .anc-cscore.style-tile.standard { background: var(--bg-pill); color: var(--text2); border: 1px solid var(--line); }
 /* pill */
@@ -1862,12 +1934,12 @@ a.anc-src:hover { color: var(--accent-text); }
   color: var(--on-accent);
   font-weight: 600;
   font-size: 13px;
-  box-shadow: 0 4px 24px oklch(0.78 0.19 var(--hue) / 0.35);
+  box-shadow: 0 4px 24px color-mix(in srgb, var(--accent-strong) 35%, transparent);
 }
 .anc-statebox.error .anc-statebox-glyph {
-  color: oklch(0.7 0.19 25);
-  background: oklch(0.7 0.19 25 / 0.12);
-  border-color: oklch(0.7 0.19 25 / 0.35);
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  border-color: color-mix(in srgb, var(--danger) 35%, transparent);
 }
 
 /* ─── Search results header ──────────────────────────────────────────────────── */

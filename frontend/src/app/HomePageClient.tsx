@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
+import { keepPreviousData } from '@tanstack/react-query'
 import type { inferRouterOutputs } from '@trpc/server'
 import { trpc } from '@/lib/trpc'
 import type { AppRouter } from '@/server/routers/_app'
@@ -128,6 +129,9 @@ export default function HomePageClient({ initialDate, initialClusters, initialTo
       enabled: !isSearchMode,
       initialData:
         selectedDate === initialDate && !categoryParam ? initialClusters : undefined,
+      // Filter/date switches re-rank in place instead of collapsing the whole
+      // feed to a skeleton (which yanked page height and scroll position).
+      placeholderData: keepPreviousData,
     },
   )
 
@@ -179,9 +183,6 @@ export default function HomePageClient({ initialDate, initialClusters, initialTo
   const { display: heroDisplay, sub: heroSub } = heroDateLabel(selectedDate)
   const mobileDates = getMobileDates(mobileDaysShown)
 
-  // Ghost number: day of selected date
-  const ghostNum = new Date(selectedDate + 'T12:00:00Z').getUTCDate().toString().padStart(2, '0')
-
   return (
     <div className="aurora-stage" suppressHydrationWarning>
       {/* Aurora background */}
@@ -190,11 +191,6 @@ export default function HomePageClient({ initialDate, initialClusters, initialTo
         <div className="aurora-blob aurora-blob-2" />
         <div className="aurora-blob aurora-blob-3" />
       </div>
-
-      {/* Ghost date number (decorative, desktop only) */}
-      {timelineMode && (
-        <div className="ghost-number" suppressHydrationWarning>{ghostNum}</div>
-      )}
 
       {/* Glass nav */}
       <NavBar
@@ -215,55 +211,8 @@ export default function HomePageClient({ initialDate, initialClusters, initialTo
       {timelineMode && <HeroModelBand models={initialTopModels} />}
 
 
-      {/* Hero — date heading + category pills */}
-      {timelineMode && (
-        <header className="anc-hero" suppressHydrationWarning>
-          <div className="anc-kicker">The AI news that actually mattered</div>
-          {/* H1 carries the topic ("AI news"), not a bare date — the homepage's
-              one heading slot shouldn't be spent on "Today". */}
-          <h1 className="anc-date-heading">
-            {heroDisplay === 'Today' ? 'AI news today' : `AI news · ${heroDisplay}`}{' '}
-            <span className="dim">· {heroSub}</span>
-          </h1>
-          <div className="anc-hero-sub">
-            <b>{storyCount} {storyCount === 1 ? 'story' : 'stories'}</b>
-            {paperCount > 0 && <> · {paperCount} {paperCount === 1 ? 'paper' : 'papers'}</>}
-            {selectedCategory !== 'all' ? ` in ${CATEGORY_LABELS[selectedCategory]}` : isTodaySelected ? ' so far today' : ''},
-            {' '}ranked by significance · highest signal first
-          </div>
-          <div className="anc-hero-actions">
-            <button className="anc-catchup" onClick={() => { setSearch(''); setRecapMode(true) }}>
-              ⚡ Catch me up on the last {RECAP_DAYS} days
-            </button>
-          </div>
-          <CategoryFilter selected={selectedCategory} onChange={(c) => { setSelectedCategory(c) }} />
-        </header>
-      )}
-
-      {/* Mobile date strip */}
-      {timelineMode && (
-        <div className="anc-datestrip" suppressHydrationWarning>
-          {mobileDates.map(({ iso, num, weekday }) => (
-            <button
-              key={iso}
-              className={`anc-dpill${iso === selectedDate ? ' active' : ''}`}
-              onClick={() => handleDateSelect(iso)}
-            >
-              <span className="anc-dpill-num">{parseInt(num, 10)}</span>
-              <span className="anc-dpill-wd">{weekday}</span>
-            </button>
-          ))}
-          <button
-            className="anc-dpill"
-            onClick={() => setMobileDaysShown((n) => n + 7)}
-            style={{ minWidth: 48 }}
-          >
-            <span className="anc-dpill-num" style={{ fontSize: 13 }}>···</span>
-          </button>
-        </div>
-      )}
-
-      {/* Main content */}
+      {/* Main content — the hero lives inside the feed column so the date rail
+          starts level with the heading (no dead zone left of the hero). */}
       <div className="anc-body">
         {/* Desktop date rail */}
         {timelineMode && (
@@ -276,6 +225,54 @@ export default function HomePageClient({ initialDate, initialClusters, initialTo
 
         {/* Feed */}
         <main className="anc-feed">
+          {/* Hero — date heading + category pills, on the story cards' axis */}
+          {timelineMode && (
+            <header className="anc-hero" suppressHydrationWarning>
+              <div className="anc-kicker">The AI news that actually mattered</div>
+              {/* H1 carries the topic ("AI news"), not a bare date — the homepage's
+                  one heading slot shouldn't be spent on "Today". */}
+              <h1 className="anc-date-heading">
+                {heroDisplay === 'Today' ? 'AI news today' : `AI news · ${heroDisplay}`}{' '}
+                <span className="dim">· {heroSub}</span>
+              </h1>
+              <div className="anc-hero-sub">
+                <b>{storyCount} {storyCount === 1 ? 'story' : 'stories'}</b>
+                {paperCount > 0 && <> · {paperCount} {paperCount === 1 ? 'paper' : 'papers'}</>}
+                {selectedCategory !== 'all' ? ` in ${CATEGORY_LABELS[selectedCategory]}` : isTodaySelected ? ' so far today' : ''},
+                {' '}ranked by significance · highest signal first
+              </div>
+              <div className="anc-hero-actions">
+                <button className="anc-catchup" onClick={() => { setSearch(''); setRecapMode(true) }}>
+                  ⚡ Catch me up on the last {RECAP_DAYS} days
+                </button>
+              </div>
+              <CategoryFilter selected={selectedCategory} onChange={(c) => { setSelectedCategory(c) }} />
+            </header>
+          )}
+
+          {/* Mobile date strip */}
+          {timelineMode && (
+            <div className="anc-datestrip" suppressHydrationWarning>
+              {mobileDates.map(({ iso, num, weekday }) => (
+                <button
+                  key={iso}
+                  className={`anc-dpill${iso === selectedDate ? ' active' : ''}`}
+                  onClick={() => handleDateSelect(iso)}
+                >
+                  <span className="anc-dpill-num">{parseInt(num, 10)}</span>
+                  <span className="anc-dpill-wd">{weekday}</span>
+                </button>
+              ))}
+              <button
+                className="anc-dpill"
+                onClick={() => setMobileDaysShown((n) => n + 7)}
+                style={{ minWidth: 48 }}
+              >
+                <span className="anc-dpill-num" style={{ fontSize: 13 }}>···</span>
+              </button>
+            </div>
+          )}
+
           {recapMode ? (
             // ── Catch me up ───────────────────────────────────────────────────
             recapLoading ? (

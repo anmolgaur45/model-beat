@@ -107,48 +107,51 @@ export function CompareTable({ models }: { models: Model[] }) {
     return { label: name, cells, best: bestIndex(raw, true) }
   })
 
-  const colWidth = `minmax(180px, 1.4fr) repeat(${models.length}, minmax(120px, 1fr))`
-
+  // A real <table> (not a styled div grid) so answer engines and parsers can
+  // lift the head-to-head specs; row-label <th scope="row"> cells stay sticky
+  // during horizontal scroll on narrow screens.
   const renderSection = (title: string, rows: Row[]) => (
-    <div key={title}>
-      <div className="anc-cmp-section" style={{ gridTemplateColumns: colWidth }}>
-        <span className="anc-cmp-sectlabel">{title}</span>
-        {models.map((m) => <span key={m.id} />)}
-      </div>
+    <tbody key={title}>
+      <tr className="anc-cmp-section">
+        <th scope="colgroup" colSpan={models.length + 1} className="anc-cmp-sectlabel">
+          {title}
+        </th>
+      </tr>
       {rows.map((row) => (
-        <div className="anc-cmp-row" key={`${title}-${row.label}`} style={{ gridTemplateColumns: colWidth }}>
-          <span className="anc-cmp-rl">{row.label}</span>
+        <tr className="anc-cmp-row" key={`${title}-${row.label}`}>
+          <th scope="row" className="anc-cmp-rl">{row.label}</th>
           {row.cells.map((cell, i) => (
-            <span key={i} className={`anc-cmp-cell${row.best === i ? ' is-best' : ''}`}>
+            <td key={i} className={`anc-cmp-cell${row.best === i ? ' is-best' : ''}`}>
               {cell}
-            </span>
+            </td>
           ))}
-        </div>
+        </tr>
       ))}
-    </div>
+    </tbody>
   )
 
   return (
     <>
       <div className="anc-cmp-scroll">
-        <div className="anc-cmp">
-          <div className="anc-cmp-row anc-cmp-head" style={{ gridTemplateColumns: colWidth }}>
-            <span className="anc-cmp-rl" />
-            {models.map((m) => (
-              <span className="anc-cmp-modelhd" key={m.id}>
-                <Link href={`/models/${m.slug}`}>{m.name}</Link>
-                <span className="anc-cmp-modelmeta">
-                  {m.vendor ?? '—'}
-                  {m.coverage_count ? ` · ${m.coverage_count} in the news` : ''}
-                </span>
-              </span>
-            ))}
-          </div>
-
+        <table className="anc-cmp">
+          <thead>
+            <tr className="anc-cmp-head">
+              <th scope="col" className="anc-cmp-rl"><span className="sr-only">Attribute</span></th>
+              {models.map((m) => (
+                <th scope="col" className="anc-cmp-modelhd" key={m.id}>
+                  <Link href={`/models/${m.slug}`}>{m.name}</Link>
+                  <span className="anc-cmp-modelmeta">
+                    {m.vendor ?? '—'}
+                    {m.coverage_count ? ` · ${m.coverage_count} in the news` : ''}
+                  </span>
+                </th>
+              ))}
+            </tr>
+          </thead>
           {renderSection('Scores', scoreRows)}
           {renderSection('Specifications', specRows)}
           {benchRows.length > 0 && renderSection('Benchmarks', benchRows)}
-        </div>
+        </table>
       </div>
 
       <p className="anc-cmp-legend">

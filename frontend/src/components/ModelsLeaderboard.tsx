@@ -118,8 +118,10 @@ export function ModelsLeaderboard({
   }, [models, search, access, multimodalOnly, sortKey, sortDir, tab])
 
   // The score column shows ECI for Newest/Overall, the value index for Value,
-  // and the bucket percentile composite otherwise.
-  const scoreColLabel = tab === 'newest' || tab === 'overall' ? 'ECI' : TABS.find((t) => t.key === tab)!.label
+  // and the bucket percentile composite otherwise. Long bucket labels get a
+  // short column form — "Reasoning & Knowledge" clips in the fixed 84px column.
+  const SHORT_COL: Partial<Record<TabKey, string>> = { reasoning: 'Reasoning', agentic: 'Agentic' }
+  const scoreColLabel = tab === 'newest' || tab === 'overall' ? 'ECI' : SHORT_COL[tab] ?? TABS.find((t) => t.key === tab)!.label
   const arrow = (key: SortKey) => (sortKey === key ? (sortDir === 'asc' ? ' ↑' : ' ↓') : '')
 
   return (

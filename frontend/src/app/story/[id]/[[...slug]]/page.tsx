@@ -10,7 +10,7 @@ import type { Category } from '@/types/article'
 import { NavBar } from '@/components/NavBar'
 import { ScoreBadge } from '@/components/ScoreBadge'
 import { SourceBubble } from '@/components/SourceBubble'
-import { ShareMenu } from '@/components/ShareMenu'
+import { SharePopover } from '@/components/SharePopover'
 import { CATEGORY_LABELS } from '@/components/categoryMeta'
 import { storyPath } from '@/lib/story'
 import { timeAgo } from '@/lib/timeFormat'
@@ -155,17 +155,26 @@ export default async function StoryPage({
         <Link className="anc-day-back" href="/">← Back to Model Beat</Link>
 
         <div className="anc-story-top">
-          <ScoreBadge score={story.significance_score ?? 0} style="pill" />
+          {/* Orb, matching the cards that link here — the score shouldn't change
+              shape on click-through. */}
+          <ScoreBadge score={story.significance_score ?? 0} style="orb" />
           <span className="anc-story-cat">{label}</span>
           <span className="anc-story-dot">·</span>
           <span className="anc-story-time">{timeAgo(story.first_published_at)}</span>
+          {/* Visible path to the day archive — the BreadcrumbList JSON-LD
+              promises Home → Day → Story, but only the schema knew it. */}
+          <span className="anc-story-dot">·</span>
+          <Link className="anc-story-dayline" href={`/day/${day}`}>
+            all news from {longDate(day)}
+          </Link>
         </div>
 
         <h1 className="anc-story-h1">{story.headline}</h1>
 
         {summary && <p className="anc-story-sum">{summary}</p>}
 
-        <ShareMenu url={url} title={story.headline} summary={story.summary} />
+        {/* Same share control as the feed cards (popover), not a second design. */}
+        <SharePopover headline={story.headline} summary={story.summary} path={storyPath(story)} className="anc-story-share" showLabel />
 
         {story.models.length > 0 && (
           <div className="anc-story-models">

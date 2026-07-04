@@ -125,6 +125,14 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <body className="min-h-full" suppressHydrationWarning>
+        {/* Stamp the saved theme before first paint: reading it in a useEffect
+            (useTheme) repainted light-theme users dark-then-light on every load. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              "try{var q=new URLSearchParams(location.search).get('theme');var t=q||localStorage.getItem('anc-theme');if(t==='light'||t==='dark')document.documentElement.dataset.theme=t}catch(e){}",
+          }}
+        />
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(SITE_JSONLD) }}

@@ -61,7 +61,9 @@ export function ScoreBadge({ score, style = 'orb' }: Props) {
   )
 }
 
-// Larger orb used in FeatureCard
+// Larger orb used in FeatureCard. Always accent-colored: this orb only exists
+// on the day's TOP STORY card, and a gray ring there (any lead scoring < 7)
+// made the hero card read as dead. The small per-row orbs keep tier honesty.
 export function ScoreOrbLarge({ score }: { score: number }) {
   const tier = scoreTier(score)
   const display = Number.isInteger(score) ? score.toFixed(0) : score.toFixed(1)
@@ -72,7 +74,7 @@ export function ScoreOrbLarge({ score }: { score: number }) {
           <div className={tier !== 'standard' ? 'score-orb-glow' : undefined}
             style={{
               position: 'absolute', inset: -14, borderRadius: '50%',
-              background: `radial-gradient(circle, oklch(0.78 0.19 var(--hue) / 0.3), transparent 70%)`,
+              background: `radial-gradient(circle, color-mix(in srgb, var(--accent-strong) 30%, transparent), transparent 70%)`,
               filter: 'blur(8px)',
               pointerEvents: 'none',
             }}
@@ -86,7 +88,7 @@ export function ScoreOrbLarge({ score }: { score: number }) {
             <circle
               cx={43} cy={43} r={38.5}
               fill="none"
-              stroke={tier !== 'standard' ? 'var(--accent)' : 'var(--text3)'}
+              stroke="var(--accent)"
               strokeWidth={5}
               strokeLinecap="round"
               strokeDasharray={2 * Math.PI * 38.5}

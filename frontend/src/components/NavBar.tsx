@@ -54,7 +54,9 @@ export function NavBar({ query = '', onQuery, onHome }: Props) {
 
   const isModels = pathname.startsWith('/models')
   const isDigest = pathname.startsWith('/digest')
-  const isNews = !isModels && !isDigest
+  // Only news surfaces light up "News" — the old !models && !digest fallback
+  // marked it active on /about, /privacy, /stack-watch too.
+  const isNews = pathname === '/' || pathname.startsWith('/day') || pathname.startsWith('/story')
 
   return (
     <div className={`anc-navwrap${navHidden ? ' nav-hidden' : ''}${scrolled ? ' nav-scrolled' : ''}`}>

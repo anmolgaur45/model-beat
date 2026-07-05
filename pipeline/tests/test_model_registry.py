@@ -19,6 +19,7 @@ from ainews.processing.model_registry import (
     match_models,
     openrouter_key,
     parse_openrouter_models,
+    pricing_change_events,
     split_or_name,
     openrouter_new_model_rows,
     parse_aa_models,
@@ -326,6 +327,42 @@ def test_clean_description_trims_truncated_fragment():
 
 def test_clean_description_keeps_all_complete_sentences():
     assert clean_description("A is good. B is better. C is the...") == "A is good. B is better."
+
+
+# ── Pricing change events (model_events diff) ──────────────────────────────────
+
+def test_pricing_change_events_detects_price_cut_and_context_change():
+    old = {"price_in": 3.0, "price_out": 15.0, "context_window": 200000}
+    new = {"price_in": 1.5, "price_out": 15.0, "context_window": 1000000}
+    events = pricing_change_events("Claude Sonnet 5", old, new)
+    assert [e["event_type"] for e in events] == ["price", "context"]
+    assert "input price cut from $3 to $1.5" in events[0]["summary"]
+    assert "-50%" in events[0]["summary"]
+    assert events[1]["old_value"] == "200000"
+    assert events[1]["new_value"] == "1000000"
+
+
+def test_pricing_change_events_first_attachment_is_not_a_change():
+    old = {"price_in": None, "price_out": None, "context_window": None}
+    new = {"price_in": 2.0, "price_out": 10.0, "context_window": 128000}
+    assert pricing_change_events("New Model", old, new) == []
+
+
+def test_pricing_change_events_ignores_sub_5pct_jitter_and_disappearing_data():
+    old = {"price_in": 2.0, "price_out": 10.0, "context_window": 128000}
+    jitter = {"price_in": 2.05, "price_out": 10.2, "context_window": 128000}
+    assert pricing_change_events("M", old, jitter) == []
+    gone = {"price_in": None, "price_out": None, "context_window": None}
+    assert pricing_change_events("M", old, gone) == []
+
+
+def test_pricing_change_events_price_raise():
+    old = {"price_in": 1.0, "price_out": 5.0, "context_window": None}
+    new = {"price_in": 1.0, "price_out": 6.0, "context_window": None}
+    events = pricing_change_events("M", old, new)
+    assert len(events) == 1
+    assert "output price raised from $5 to $6" in events[0]["summary"]
+    assert "+20%" in events[0]["summary"]
 
 
 def test_clean_description_passthrough_and_empty():

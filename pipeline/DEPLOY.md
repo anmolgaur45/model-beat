@@ -10,9 +10,13 @@ service-account key stored in GitHub). The setup below is a one-time task.
 
 ## Constants
 
+Regions: the Artifact Registry repo lives in `asia-south1` (kept there on purpose;
+moving images is not worth it), but the Cloud Run Job itself runs in `us-central1`,
+co-located with Cloud SQL since 2026-07-02.
+
 ```
 PROJECT_ID=ai-news-calendar-493510
-REGION=asia-south1
+REGION=asia-south1        # Artifact Registry only; the job runs in us-central1
 REPO=anmolgaur45/model-beat
 POOL=github-pool
 PROVIDER=github-provider
@@ -99,4 +103,4 @@ gcloud artifacts repositories set-cleanup-policies ainews \
 
 - Trigger a deploy without a code change: Actions tab → **deploy-pipeline** → Run workflow.
 - Roll back: re-run the workflow on an older commit, or point the job at a prior SHA:
-  `gcloud run jobs update ainews-pipeline --region=asia-south1 --image=<IMAGE>:<OLD_SHA>`
+  `gcloud run jobs update ainews-pipeline --region=us-central1 --image=<IMAGE>:<OLD_SHA>`

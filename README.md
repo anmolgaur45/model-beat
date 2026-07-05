@@ -17,7 +17,7 @@ Vercel (Frontend)                      Google Cloud (Backend)
 └──────────────────────┘ ISR │   ingest → embed → score → cluster  │
                              │   → merge → summarize → sync models  │
                              │                                     │
-                             │ Cloud Scheduler (every 6h)          │
+                             │ Cloud Scheduler (every 3h)          │
                              └────────────────────────────────────┘
 
 External data: Epoch AI (benchmarks), OpenRouter (pricing and specs),
@@ -75,6 +75,7 @@ pipeline/       # Data ingestion pipeline (Python)
 - Per-day archive pages, an XML sitemap, and a `robots.txt`
 - Structured data (JSON-LD) for the site, articles, and model pages
 - An RSS feed at `/feed.xml`
+- A free weekly email digest, with signup at [/digest](https://themodelbeat.com/digest)
 
 ## Tech stack
 
@@ -88,7 +89,7 @@ pipeline/       # Data ingestion pipeline (Python)
 | Model data | Epoch AI (benchmarks, CC-BY), OpenRouter (pricing and specs) |
 | Hosting | Vercel (frontend), GCP Cloud Run (pipeline) |
 | CI/CD | GitHub Actions, tests on every push and auto-deploy of the pipeline |
-| Scheduling | GCP Cloud Scheduler, every 6 hours |
+| Scheduling | GCP Cloud Scheduler, every 3 hours |
 
 ## Running locally
 
@@ -119,7 +120,7 @@ python -m ainews.main
 # Pipeline
 cd pipeline
 ruff check src/ tests/ scripts/
-pytest tests/ -v            # 114 tests
+pytest tests/ -v            # 133 tests
 
 # Frontend
 cd frontend
@@ -135,6 +136,7 @@ Migrations live in `pipeline/migrations/` and target PostgreSQL 15 with the `vec
 - `articles`, ingested articles with 384-dimensional embeddings and impact scores
 - `clusters`, deduplicated story groups with significance scores, AI summaries, and an FTS index
 - `models`, `model_benchmarks`, and `model_clusters`, the model registry, its benchmark scores, and the links between a model and the stories that covered it
+- `model_events`, detected changes to a model's pricing or context window, diffed from the OpenRouter catalog on every run
 - `pipeline_runs`, a log of run timestamps used to flag stale data in the UI
 - `find_nearest_article()`, the pgvector ANN search function used during clustering
 
@@ -152,13 +154,13 @@ The frontend deploys to Vercel automatically on every push to `main`, and serves
 
 The pipeline deploys through GitHub Actions. A push that touches `pipeline/` runs the test suite first, and on success builds the container image and deploys it to the Cloud Run Job, pinned to the commit SHA. Authentication uses Workload Identity Federation, so there are no service-account keys in the repository. First-time setup for the federation pool, the deployer service account, and the IAM roles is documented in `pipeline/DEPLOY.md`.
 
-Cloud Scheduler triggers the pipeline every six hours. When a run completes it calls `/api/revalidate` on the frontend to refresh the cache.
+Cloud Scheduler triggers the pipeline every three hours. When a run completes it calls `/api/revalidate` on the frontend to refresh the cache.
 
 ## Observability and security
 
 - Page and performance metrics through Vercel Analytics and Speed Insights
 - Error tracking on the client, server, and edge runtimes
-- A stale-data banner that appears when the latest pipeline run is more than eight hours old
+- A `pipeline_runs` log of every run, with email alerts on failed Cloud Run executions
 - Security headers on every response, including Content-Security-Policy, X-Frame-Options, and (in production) HSTS
 - In-memory rate limiting on the write endpoints
 - All API inputs validated with Zod, including allowlists for category and date parameters

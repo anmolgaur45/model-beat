@@ -23,6 +23,7 @@ pipeline/build/
 pipeline/.ruff_cache/
 pipeline/.pytest_cache/
 pipeline/eval/
+pipeline/digest/
 
 # ── Shared ──────────────────────────────────────────
 # Catch leftover build artifacts at any depth

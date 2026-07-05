@@ -388,6 +388,40 @@ def _cheaper_in(a: dict, b: dict) -> bool:
     return pa < pb
 
 
+# Price moves under 5% are provider jitter (variant churn, rounding), not news.
+_PRICE_EVENT_MIN_REL = 0.05
+
+
+def pricing_change_events(name: str, old: dict, new: dict) -> list[dict]:
+    """Diff a model's stored pricing/specs against fresh OpenRouter data into
+    model_events rows (sans model_id). First-time attachment (stored value is
+    None) is not a change. Pure and unit-testable."""
+    events: list[dict] = []
+    for field, label in (("price_in", "Input price"), ("price_out", "Output price")):
+        o, n = old.get(field), new.get(field)
+        if o is None or n is None or o <= 0:
+            continue
+        rel = (n - o) / o
+        if abs(rel) < _PRICE_EVENT_MIN_REL:
+            continue
+        verb = "cut" if n < o else "raised"
+        events.append({
+            "event_type": "price",
+            "summary": f"{name}: {label.lower()} {verb} from ${o:g} to ${n:g} per 1M tokens ({rel:+.0%})",
+            "old_value": f"{o:g}",
+            "new_value": f"{n:g}",
+        })
+    o, n = old.get("context_window"), new.get("context_window")
+    if o and n and o != n:
+        events.append({
+            "event_type": "context",
+            "summary": f"{name}: context window changed from {o:,} to {n:,} tokens",
+            "old_value": str(o),
+            "new_value": str(n),
+        })
+    return events
+
+
 # Artificial Analysis `evaluations` field → our benchmark (display name, unit).
 # Scores arrive as 0–1 fractions, matching our '%' storage. The first three
 # overlap Epoch (AA only fills them when Epoch is missing); the last four are
@@ -771,16 +805,34 @@ def sync_pricing(conn: psycopg.Connection) -> int:
         return 0
 
     with conn.cursor() as cur:
-        cur.execute("SELECT id, epoch_key, name FROM models")
+        cur.execute("SELECT id, epoch_key, name, price_in, price_out, context_window FROM models")
         rows = cur.fetchall()
 
     count = 0
-    for model_id, epoch_key, name in rows:
+    event_count = 0
+    for model_id, epoch_key, name, old_in, old_out, old_ctx in rows:
         rec = catalog.get(normalize_key(epoch_key or name))
         if rec is None:
             continue
+        events = pricing_change_events(
+            name, {"price_in": old_in, "price_out": old_out, "context_window": old_ctx}, rec
+        )
         try:
             with conn.cursor() as cur:
+                # Diff before overwrite: the change record IS the product
+                # (digest "model moves", model-page changelog), so it lands in
+                # the same transaction as the update that would erase it.
+                for ev in events:
+                    cur.execute(
+                        """
+                        INSERT INTO model_events (model_id, event_type, summary,
+                                                  old_value, new_value, source_url)
+                        VALUES (%(model_id)s, %(event_type)s, %(summary)s,
+                                %(old_value)s, %(new_value)s, %(source_url)s)
+                        """,
+                        {**ev, "model_id": model_id,
+                         "source_url": f"https://openrouter.ai/{rec['openrouter_id']}"},
+                    )
                 cur.execute(
                     """
                     UPDATE models SET
@@ -798,11 +850,12 @@ def sync_pricing(conn: psycopg.Connection) -> int:
                 )
             conn.commit()
             count += 1
+            event_count += len(events)
         except Exception as exc:
             conn.rollback()
             log.warning("pricing.update_failed", name=name, error=str(exc))
 
-    log.info("pricing.synced", count=count)
+    log.info("pricing.synced", count=count, events=event_count)
     return count
 
 

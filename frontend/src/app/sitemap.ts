@@ -82,6 +82,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: `${SITE}/models/compare`, lastModified: new Date(), changeFrequency: 'weekly', priority: 0.6 },
     { url: `${SITE}/digest`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.6 },
     { url: `${SITE}/about`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.5 },
+    { url: `${SITE}/methodology`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.5 },
     ...BEST_VIEWS.map((v) => ({
       url: `${SITE}/models/best/${v.key}`,
       lastModified: new Date(),

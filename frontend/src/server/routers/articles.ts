@@ -280,6 +280,10 @@ export const articlesRouter = router({
       // outlets at 3), a cluster of three arXiv near-dupes plus a real outlet
       // would look all-arXiv and get shelved despite having news coverage.
       const allArxiv = new Map<string, boolean>()
+      // Score-receipt inputs, also over ALL members: distinct outlets and the
+      // highest LLM impact rating (shown in the badge's "why this score" popover).
+      const sourcesByCluster = new Map<string, Set<string>>()
+      const maxImpactByCluster = new Map<string, number>()
       for (const article of articles) {
         if (!article.cluster_id) continue
         const arr = articlesByCluster.get(article.cluster_id) ?? []
@@ -289,6 +293,15 @@ export const articlesRouter = router({
           article.cluster_id,
           (allArxiv.get(article.cluster_id) ?? true) && article.source_name.startsWith('arXiv'),
         )
+        const srcs = sourcesByCluster.get(article.cluster_id) ?? new Set<string>()
+        srcs.add(article.source_name)
+        sourcesByCluster.set(article.cluster_id, srcs)
+        if (article.impact_score != null) {
+          maxImpactByCluster.set(
+            article.cluster_id,
+            Math.max(maxImpactByCluster.get(article.cluster_id) ?? 0, article.impact_score),
+          )
+        }
       }
 
       // Models this story is about (SEO cross-linking) — links a release story
@@ -313,6 +326,8 @@ export const articlesRouter = router({
           articles: articlesByCluster.get(c.id) ?? [],
           models: modelsByCluster.get(c.id) ?? [],
           paper_only: allArxiv.get(c.id) ?? false,
+          source_count: sourcesByCluster.get(c.id)?.size ?? 0,
+          max_impact: maxImpactByCluster.get(c.id) ?? null,
         }))
         .filter((c) => c.articles.length > 0) as (Cluster & { articles: Article[] })[]
     }),
@@ -344,6 +359,8 @@ export const articlesRouter = router({
           articles: [article],
           models: [] as { slug: string; name: string }[],
           related: [] as RelatedStory[],
+          source_count: 1,
+          max_impact: article.impact_score,
         }
       }
 
@@ -388,7 +405,15 @@ export const articlesRouter = router({
         `
       }
 
-      return { ...cluster, articles, models, related }
+      const impacts = articles.map((a) => a.impact_score).filter((v): v is number => v != null)
+      return {
+        ...cluster,
+        articles,
+        models,
+        related,
+        source_count: new Set(articles.map((a) => a.source_name)).size,
+        max_impact: impacts.length ? Math.max(...impacts) : null,
+      }
     }),
 
   search: publicProcedure

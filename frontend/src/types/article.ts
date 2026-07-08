@@ -39,6 +39,10 @@ export interface Cluster {
   // every member is arXiv (computed over ALL members in getClusters, not the
   // 3-article display cap) — drives the papers shelf split
   paper_only?: boolean
+  // score-receipt inputs (computed over ALL members, pre display cap):
+  // distinct outlets covering the story, and the highest LLM impact rating
+  source_count?: number
+  max_impact?: number | null
 }
 
 // Model registry (Phase K) — Epoch AI–backed canonical model + its benchmarks.

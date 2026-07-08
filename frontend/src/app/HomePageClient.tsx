@@ -228,7 +228,12 @@ export default function HomePageClient({ initialDate, initialClusters, initialTo
           {/* Hero — date heading + category pills, on the story cards' axis */}
           {timelineMode && (
             <header className="anc-hero" suppressHydrationWarning>
-              <div className="anc-kicker">The AI news that actually mattered</div>
+              {/* The one-line answer to "what is this site": the news+tracker
+                  integration stated outright, not left for visitors to infer. */}
+              <div className="anc-valueprop">
+                Daily AI news, deduplicated and ranked by significance, linked to a live tracker
+                of the models it&apos;s about.
+              </div>
               {/* H1 carries the topic ("AI news"), not a bare date — the homepage's
                   one heading slot shouldn't be spent on "Today". */}
               <h1 className="anc-date-heading">

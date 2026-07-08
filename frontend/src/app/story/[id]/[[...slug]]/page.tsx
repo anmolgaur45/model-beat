@@ -9,6 +9,7 @@ import { createContext } from '@/server/trpc'
 import type { Category } from '@/types/article'
 import { NavBar } from '@/components/NavBar'
 import { ScoreBadge } from '@/components/ScoreBadge'
+import { receiptFromCluster } from '@/lib/scoreReceipt'
 import { SourceBubble } from '@/components/SourceBubble'
 import { SharePopover } from '@/components/SharePopover'
 import { CATEGORY_LABELS } from '@/components/categoryMeta'
@@ -157,7 +158,11 @@ export default async function StoryPage({
         <div className="anc-story-top">
           {/* Orb, matching the cards that link here — the score shouldn't change
               shape on click-through. */}
-          <ScoreBadge score={story.significance_score ?? 0} style="orb" />
+          <ScoreBadge
+            score={story.significance_score ?? 0}
+            style="orb"
+            receipt={receiptFromCluster(story)}
+          />
           <span className="anc-story-cat">{label}</span>
           <span className="anc-story-dot">·</span>
           <span className="anc-story-time">{timeAgo(story.first_published_at)}</span>
@@ -186,7 +191,14 @@ export default async function StoryPage({
         )}
 
         <section className="anc-story-sources">
-          <h2>Covered by {story.articles.length} source{story.articles.length === 1 ? '' : 's'}</h2>
+          {/* Honest counts: N articles can come from fewer outlets (the receipt
+              popover says "29 articles across 23 sources"; this must match). */}
+          <h2>
+            Covered by {story.source_count ?? story.articles.length} source
+            {(story.source_count ?? story.articles.length) === 1 ? '' : 's'}
+            {story.articles.length !== (story.source_count ?? story.articles.length) &&
+              ` · ${story.articles.length} articles`}
+          </h2>
           <ul>
             {story.articles.map((a) => (
               <li key={a.id}>

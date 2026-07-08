@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { AnimatePresence, motion } from 'framer-motion'
 import type { Article, Cluster, Category } from '@/types/article'
 import { ScoreBadge, type ScoreStyle } from './ScoreBadge'
+import { receiptFromCluster } from '@/lib/scoreReceipt'
 import { SourceBubble } from './SourceBubble'
 import { CATEGORY_LABELS } from './categoryMeta'
 import { timeAgo } from '@/lib/timeFormat'
@@ -60,7 +61,7 @@ export function StoryCard({ cluster, showDate = false, scoreStyle = 'orb', highl
           }
         }}
       >
-        <ScoreBadge score={score} style={scoreStyle} />
+        <ScoreBadge score={score} style={scoreStyle} receipt={receiptFromCluster(cluster)} />
 
         <span className="anc-cmain">
           <h3>
@@ -123,7 +124,11 @@ export function StoryCard({ cluster, showDate = false, scoreStyle = 'orb', highl
               {cluster.articles.length > 0 && (
                 <div className="anc-srclist">
                   <div className="anc-srclist-title">
-                    Coverage · {cluster.articles.length} source{cluster.articles.length > 1 ? 's' : ''}
+                    {/* Real totals, not the 3-article display cap — must agree
+                        with the score receipt's "N articles across M sources". */}
+                    Coverage · {cluster.source_count ?? cluster.articles.length} source
+                    {(cluster.source_count ?? cluster.articles.length) > 1 ? 's' : ''}
+                    {cluster.article_count > cluster.articles.length ? ` · top ${cluster.articles.length} shown` : ''}
                   </div>
                   {cluster.articles.map((a) => (
                     <div className="anc-srcitem" key={a.id}>

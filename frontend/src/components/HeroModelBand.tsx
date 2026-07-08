@@ -1,8 +1,10 @@
 import Link from 'next/link'
 
-// Compact "model intelligence" band for the top of the homepage. Reframes the
-// first impression toward the model-tracker wedge without demoting the news
-// timeline below it. Data is a tiny top-5 slice computed server-side.
+// Compact, labeled "model tracker" strip under the ticker. Demoted from a
+// hero-weight panel (2026-07-08, repeated Reddit feedback: two competing hero
+// pitches muddled what the site is). The strip keeps the news↔models join
+// visible and the /models entry prominent without contesting the page's
+// identity; the news feed below is the primary product.
 export interface TopModel {
   slug: string
   name: string
@@ -14,33 +16,21 @@ export function HeroModelBand({ models }: { models: TopModel[] }) {
   if (models.length === 0) return null
 
   return (
-    <section className="anc-hband" aria-label="AI model intelligence">
-      <div className="anc-hband-head">
-        <div className="anc-kicker">Model intelligence</div>
-        <h2 className="anc-hband-title">Track and compare every major AI model</h2>
-        <p className="anc-hband-sub">
-          Ranked on real benchmarks, with live pricing, context windows, and the news behind
-          each release.
-        </p>
-        <div className="anc-hband-cta">
-          <Link href="/models" className="anc-hband-btn primary">Open the leaderboard →</Link>
-          <Link href="/models/compare" className="anc-hband-btn">Compare models</Link>
-        </div>
-      </div>
-
-      <div className="anc-hband-panel">
-        <div className="anc-hband-cap">Top by overall intelligence</div>
-        <ol className="anc-hband-list">
-          {models.map((m, i) => (
-            <li key={m.slug}>
-              <span className="rk">{i + 1}</span>
-              <Link href={`/models/${m.slug}`} className="nm">{m.name}</Link>
-              {m.vendor && <span className="vnd">{m.vendor}</span>}
-              <span className="sc">{m.score}</span>
-            </li>
-          ))}
-        </ol>
-      </div>
+    <section className="anc-mstrip" aria-label="Model tracker: top models">
+      <span className="anc-mstrip-label">Model tracker</span>
+      <ol className="anc-mstrip-list">
+        {models.slice(0, 3).map((m, i) => (
+          <li key={m.slug}>
+            <span className="rk">{i + 1}</span>
+            <Link href={`/models/${m.slug}`} className="nm">{m.name}</Link>
+            <span className="sc">{m.score}</span>
+          </li>
+        ))}
+      </ol>
+      <span className="anc-mstrip-links">
+        <Link href="/models">Full leaderboard →</Link>
+        <Link href="/models/compare">Compare</Link>
+      </span>
     </section>
   )
 }

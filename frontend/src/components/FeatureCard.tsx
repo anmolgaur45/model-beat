@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import type { Article, Cluster, Category } from '@/types/article'
 import { ScoreOrbLarge } from './ScoreBadge'
+import { receiptFromCluster } from '@/lib/scoreReceipt'
 import { SourceBubble } from './SourceBubble'
 import { SharePopover } from './SharePopover'
 import { CATEGORY_LABELS } from './categoryMeta'
@@ -21,7 +22,7 @@ export function FeatureCard({ cluster }: Props) {
 
   return (
     <article className="anc-feature">
-      <ScoreOrbLarge score={score} />
+      <ScoreOrbLarge score={score} receipt={receiptFromCluster(cluster)} />
       <div className="anc-fmain">
         <div className="anc-frow">
           <span className="anc-ftag">★ Top story · {label}</span>

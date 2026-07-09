@@ -39,6 +39,8 @@ export interface ModelView {
   modalities: { in: string[]; out: string[] }
   priceIn: string
   priceOut: string
+  // Phase U: cheapest credible OpenRouter provider, shown when below the list price
+  floor?: { in: string; out: string; provider: string } | null
   context: string
   released: string
   providers: string[]
@@ -219,6 +221,12 @@ export function ModelTelemetry({ view: M }: { view: ModelView }) {
           <div className="m2-spec"><div className="k">Context</div><div className="v">{M.context}</div></div>
           <div className="m2-spec"><div className="k">Input</div><div className="v">{M.priceIn} <span className="per">/ 1M</span></div></div>
           <div className="m2-spec"><div className="k">Output</div><div className="v">{M.priceOut} <span className="per">/ 1M</span></div></div>
+          {M.floor && (
+            <div className="m2-spec">
+              <div className="k">Cheapest via {M.floor.provider}</div>
+              <div className="v">{M.floor.in} / {M.floor.out} <span className="per">/ 1M</span></div>
+            </div>
+          )}
           <div className="m2-spec"><div className="k">Released</div><div className="v">{M.released}</div></div>
           <div className="m2-spec">
             <div className="k">Modalities</div>

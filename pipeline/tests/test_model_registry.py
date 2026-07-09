@@ -24,6 +24,9 @@ from ainews.processing.model_registry import (
     openrouter_new_model_rows,
     parse_aa_models,
     aa_base_key,
+    provider_matches_author,
+    parse_endpoints,
+    endpoint_change_events,
 )
 
 
@@ -452,3 +455,172 @@ def test_parse_aa_models_ignores_null_scores():
     cat = parse_aa_models(data)
     scores = cat[normalize_key("M")]
     assert "GPQA Diamond" not in scores and scores["Humanity's Last Exam"] == (0.4, "%")
+
+
+# ── Phase U: per-provider endpoint parsing + debounced vendor/floor events ─────
+
+def _ep(provider, price_in, price_out, *, quant=None, ctx=1_000_000, status=0, discount=0,
+        tag=None):
+    return {
+        "provider_name": provider,
+        "tag": tag or (provider or "").lower(),
+        "context_length": ctx,
+        "quantization": quant,
+        "status": status,
+        "pricing": {"prompt": str(price_in / 1e6), "completion": str(price_out / 1e6),
+                    "discount": discount},
+    }
+
+
+def test_provider_matches_author():
+    assert provider_matches_author("Z.AI", "z-ai")
+    assert provider_matches_author("Mistral", "mistralai")
+    assert provider_matches_author("OpenAI", "openai")
+    assert provider_matches_author("Alibaba", "qwen")  # brand alias
+    assert not provider_matches_author("DeepInfra", "z-ai")
+    assert not provider_matches_author("", "z-ai")
+
+
+def test_parse_endpoints_vendor_and_floor():
+    data = {"endpoints": [
+        _ep("Ambient", 0.54, 1.76, quant="fp8", ctx=101_376),        # short context: out
+        _ep("Novita", 0.63, 1.98, quant="fp8", discount=0.55),       # promo: out
+        _ep("DeepInfra", 0.93, 3.00, quant="fp4"),                   # low quant: out
+        _ep("GMICloud", 0.98, 3.08, quant="fp8", status=-2),         # degraded: out
+        _ep("Baidu", 0.97, 3.07, quant="fp8"),                       # the credible floor
+        _ep("Z.AI", 1.40, 4.40, quant="fp8"),                        # the vendor
+        _ep("Fireworks", 2.10, 6.60),                                # fast variant: loses min
+    ]}
+    out = parse_endpoints(data, "z-ai")
+    assert out["vendor_price_in"] == 1.40 and out["vendor_price_out"] == 4.40
+    assert out["floor_price_in"] == 0.97 and out["floor_provider"] == "Baidu"
+    assert out["floor_quant"] == "fp8" and out["floor_context"] == 1_000_000
+
+
+def test_parse_endpoints_no_vendor_endpoint_is_null():
+    out = parse_endpoints({"endpoints": [_ep("DeepInfra", 0.2, 0.8, quant="fp8")]}, "meta-llama")
+    assert out["vendor_price_in"] is None
+    assert out["floor_price_in"] == 0.2 and out["floor_provider"] == "DeepInfra"
+
+
+def test_parse_endpoints_single_provider_closed_model():
+    out = parse_endpoints({"endpoints": [_ep("Anthropic", 10.0, 50.0)]}, "anthropic")
+    assert out["vendor_price_in"] == out["floor_price_in"] == 10.0
+    assert out["vendor_price_out"] == out["floor_price_out"] == 50.0
+
+
+def test_parse_endpoints_vendor_ignores_status_and_drops_service_tiers():
+    # Seen live on GPT-5.4 Mini: the vendor's own endpoints were status -2 while
+    # a reseller was healthy, and the vendor listed flex (cheaper) and priority
+    # (pricier) tiers beside the standard rate, all tagged. The tagged tiers are
+    # dropped entirely; the vendor price comes from the standard row regardless
+    # of status; the floor still requires a healthy row.
+    data = {"endpoints": [
+        _ep("Azure", 0.75, 4.5, tag="azure"),
+        _ep("OpenAI", 0.75, 4.5, status=-2, tag="openai"),
+        _ep("OpenAI", 0.375, 2.25, status=-2, tag="openai/flex"),
+        _ep("OpenAI", 1.5, 9.0, status=-2, tag="openai/priority"),
+    ]}
+    out = parse_endpoints(data, "openai")
+    assert out["vendor_price_in"] == 0.75 and out["vendor_price_out"] == 4.5
+    assert out["floor_price_in"] == 0.75 and out["floor_provider"] == "Azure"
+
+
+def test_parse_endpoints_all_rows_discounted_leaves_floor_none():
+    # Seen live on Qwen: the only provider is the (aliased) vendor running a
+    # standing discount, so there is no credible floor but there IS a vendor price.
+    out = parse_endpoints({"endpoints": [_ep("Alibaba", 0.325, 1.95, discount=0.35)]}, "qwen")
+    assert out["vendor_price_in"] == 0.325
+    assert out["floor_price_in"] is None and out["floor_provider"] is None
+
+
+def test_parse_endpoints_unknown_quant_passes_and_empty_is_safe():
+    out = parse_endpoints({"endpoints": [_ep("X", 1.0, 2.0, quant=None)]}, "y")
+    assert out["floor_price_in"] == 1.0
+    assert parse_endpoints({}, "y")["floor_price_in"] is None
+
+
+def _fresh(vin=None, vout=None, fin=None, fout=None, provider=None):
+    return {"vendor_price_in": vin, "vendor_price_out": vout,
+            "floor_price_in": fin, "floor_price_out": fout,
+            "floor_provider": provider, "floor_quant": "fp8", "floor_context": 500_000}
+
+
+def test_endpoint_change_first_sighting_buffers_no_event():
+    stored = {"vendor_price_in": 1.4, "vendor_price_out": 4.4,
+              "floor_price_in": 0.54, "floor_price_out": 1.76}
+    events, updates, pending = endpoint_change_events(
+        "GLM 5.2", stored, _fresh(vin=1.4, vout=4.4, fin=0.97, fout=3.07, provider="Baidu"), {})
+    assert events == [] and updates == {}
+    assert pending == {"floor_price_in": 0.97, "floor_price_out": 3.07}
+
+
+def test_endpoint_change_second_sample_confirms_and_fires_scoped_event():
+    stored = {"vendor_price_in": 1.4, "vendor_price_out": 4.4,
+              "floor_price_in": 0.54, "floor_price_out": 1.76}
+    pending = {"floor_price_in": 0.97, "floor_price_out": 3.07}
+    events, updates, new_pending = endpoint_change_events(
+        "GLM 5.2", stored, _fresh(vin=1.4, vout=4.4, fin=0.97, fout=3.07, provider="Baidu"), pending)
+    assert {e["price_scope"] for e in events} == {"floor"}
+    assert all(e["event_type"] == "price" for e in events)
+    assert "Baidu" in events[0]["summary"] and "cheapest credible provider" in events[0]["summary"]
+    assert updates["floor_price_in"] == 0.97 and updates["floor_provider"] == "Baidu"
+    assert updates["floor_quant"] == "fp8" and new_pending == {}
+
+
+def test_endpoint_change_contradicting_sample_restarts_debounce():
+    stored = {"vendor_price_in": None, "vendor_price_out": None,
+              "floor_price_in": 0.54, "floor_price_out": 1.76}
+    pending = {"floor_price_in": 0.97}
+    events, updates, new_pending = endpoint_change_events(
+        "M", stored, _fresh(fin=0.80, fout=1.76), pending)
+    assert events == [] and updates == {}
+    assert new_pending["floor_price_in"] == 0.80
+
+
+def test_endpoint_change_vendor_exact_and_floor_jitter():
+    stored = {"vendor_price_in": 1.40, "vendor_price_out": 4.40,
+              "floor_price_in": 1.00, "floor_price_out": 2.00}
+    # vendor moved 3.6% (real, exact compare), floor moved 2% (jitter, ignored)
+    fresh = _fresh(vin=1.45, vout=4.40, fin=1.02, fout=2.00)
+    events, updates, pending = endpoint_change_events("M", stored, fresh, {})
+    assert pending == {"vendor_price_in": 1.45}
+    events, updates, pending = endpoint_change_events("M", stored, fresh, pending)
+    assert len(events) == 1 and events[0]["price_scope"] == "vendor"
+    assert "vendor list price raised" in events[0]["summary"]
+    assert updates == {"vendor_price_in": 1.45} and pending == {}
+
+
+def test_endpoint_change_null_transition_debounced_no_event():
+    stored = {"vendor_price_in": 1.40, "vendor_price_out": 4.40,
+              "floor_price_in": 1.00, "floor_price_out": 2.00}
+    fresh = _fresh(vin=None, vout=None, fin=1.00, fout=2.00)
+    events, updates, pending = endpoint_change_events("M", stored, fresh, {})
+    assert events == [] and updates == {}  # one blip keeps last-known
+    assert pending == {"vendor_price_in": None, "vendor_price_out": None}
+    events, updates, pending = endpoint_change_events("M", stored, fresh, pending)
+    assert events == []  # a delisting is not a reprice
+    assert updates == {"vendor_price_in": None, "vendor_price_out": None} and pending == {}
+
+
+def test_endpoint_change_floor_disappearing_keeps_last_known():
+    # The credible set going empty (all rows discounted/degraded) is not a price
+    # move; price_in doubles as the display price and must not blank.
+    stored = {"vendor_price_in": 0.325, "vendor_price_out": 1.95,
+              "floor_price_in": 0.325, "floor_price_out": 1.95}
+    fresh = _fresh(vin=0.325, vout=1.95, fin=None, fout=None)
+    events, updates, pending = endpoint_change_events("Qwen", stored, fresh, {})
+    assert events == [] and updates == {} and pending == {}
+    # even a stale pending null clears rather than confirming
+    events, updates, pending = endpoint_change_events(
+        "Qwen", stored, fresh, {"floor_price_in": None})
+    assert updates == {} and pending == {}
+
+
+def test_endpoint_change_reverted_candidate_clears_pending():
+    stored = {"vendor_price_in": None, "vendor_price_out": None,
+              "floor_price_in": 1.00, "floor_price_out": 2.00}
+    pending = {"floor_price_in": 1.50}
+    events, updates, new_pending = endpoint_change_events(
+        "M", stored, _fresh(fin=1.00, fout=2.00), pending)
+    assert events == [] and updates == {} and new_pending == {}

@@ -70,8 +70,13 @@ export interface Model {
   updated_at?: string | null // last registry sync (freshness signal)
   // pricing & specs from OpenRouter (Phase O1); null when not served by OpenRouter
   openrouter_id: string | null
-  price_in: number | null // USD per 1M input tokens
+  price_in: number | null // USD per 1M input tokens (cheapest credible provider once endpoint-synced, Phase U)
   price_out: number | null // USD per 1M output tokens
+  // Phase U: the first-party provider's list price + who serves the credible floor
+  vendor_price_in?: number | null
+  vendor_price_out?: number | null
+  floor_provider?: string | null
+  floor_quant?: string | null
   context_window: number | null
   input_modalities: string | null // comma-joined, e.g. 'text, image'
   output_modalities: string | null

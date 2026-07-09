@@ -17,12 +17,14 @@ import csv
 import io
 import json
 import re
+import time
 import zipfile
 from datetime import datetime, timedelta, timezone
 
 import httpx
 import psycopg
 import structlog
+from psycopg.types.json import Json
 
 from ..config import settings
 
@@ -422,6 +424,206 @@ def pricing_change_events(name: str, old: dict, new: dict) -> list[dict]:
     return events
 
 
+# ── Price tracking v2 (Phase U): per-provider endpoint data ────────────────────
+#
+# The model-level OpenRouter price is a blend of the third-party provider spread,
+# so it swings with provider/quant/promo churn and produced a misleading digest
+# line (GLM-5.2, 2026-07-09). /endpoints gives per-provider rows; from them we
+# track two honest prices: the first-party vendor's list price (real news when it
+# moves) and the cheapest CREDIBLE provider (the floor). See roadmap Phase U.
+
+# Quants below 8-bit (fp4, int4, ...) are a different product at a different
+# price; they must not set the floor. fp8/int8/fp16/bf16 and unlabeled rows pass.
+_LOW_QUANT_RE = re.compile(r"^(?:fp|int)[1-7]$", re.IGNORECASE)
+
+# Service-tier endpoints (seen live: tags `openai/flex`, `openai/priority`) are
+# the same model at off-list prices for a different latency contract. They are
+# neither the list price nor a comparable floor, so they are dropped entirely.
+# Quant tag suffixes (`novita/fp8`) don't match this.
+_SERVICE_TIER_RE = re.compile(r"/(?:flex|priority|batch|off-?peak|turbo)$", re.IGNORECASE)
+
+# First-party brands whose OpenRouter author slug differs from the provider's
+# company name ('qwen/...' models are served first-party by 'Alibaba').
+_VENDOR_ALIASES = {"qwen": "alibaba"}
+
+# An endpoint's context must be at least this fraction of the model's largest
+# offered context to set the floor (the raw cheapest GLM-5.2 provider serves
+# 101K of a 1M-token model — cheaper, but not the same product).
+_FLOOR_MIN_CONTEXT_FRACTION = 0.5
+
+
+def _norm_org(s: str | None) -> str:
+    return re.sub(r"[^a-z0-9]", "", (s or "").lower())
+
+
+def provider_matches_author(provider: str | None, author: str | None) -> bool:
+    """True when an endpoint's provider is the model's first-party vendor.
+
+    Compares alnum-collapsed forms with a prefix allowance so 'Z.AI' matches
+    author slug 'z-ai' and 'Mistral' matches 'mistralai'. Min length 3 keeps
+    junk prefixes from matching.
+    """
+    p, a = _norm_org(provider), _norm_org(author)
+    a = _VENDOR_ALIASES.get(a, a)
+    if len(p) < 3 or len(a) < 3:
+        return False
+    return p == a or p.startswith(a) or a.startswith(p)
+
+
+def parse_endpoints(data: dict, author: str) -> dict:
+    """OpenRouter `/models/{author}/{slug}/endpoints` payload → vendor + floor prices.
+
+    Service-tier rows (tag suffix flex/priority/batch/...) are dropped first:
+    same model, different latency contract, not the list price and not a
+    comparable floor. Vendor = the first-party provider's endpoint (matched via
+    `provider_matches_author`, brand aliases included); None when the vendor
+    doesn't serve on OpenRouter (common for open-weight models). Status is
+    ignored for the vendor (a temporarily deranked vendor endpoint still states
+    the list price; requiring health made it flap) and the max-priced remaining
+    vendor row wins as belt-and-braces against unlabeled discount tiers.
+    Floor = min input price over the CREDIBLE set: healthy
+    (`status >= 0`), undiscounted (`pricing.discount == 0`), quant >= 8-bit, and
+    context >= 50% of the model's largest offered context. Explicit fast-variant
+    exclusion is unnecessary: fast endpoints are the expensive duplicates, min
+    never picks them. Pure and unit-testable.
+    """
+    rows = []
+    for e in data.get("endpoints") or []:
+        if _SERVICE_TIER_RE.search(e.get("tag") or ""):
+            continue
+        pricing = e.get("pricing") or {}
+        price_in = _price_per_million(pricing.get("prompt"))
+        if price_in is None:
+            continue
+        status = e.get("status")
+        rows.append({
+            "provider": e.get("provider_name"),
+            "price_in": price_in,
+            "price_out": _price_per_million(pricing.get("completion")),
+            "discount": pricing.get("discount") or 0,
+            "quant": (e.get("quantization") or "").strip() or None,
+            "context": e.get("context_length") or None,
+            "healthy": not isinstance(status, (int, float)) or status >= 0,
+        })
+
+    out = {
+        "vendor_price_in": None, "vendor_price_out": None,
+        "floor_price_in": None, "floor_price_out": None,
+        "floor_provider": None, "floor_quant": None, "floor_context": None,
+    }
+    if not rows:
+        return out
+
+    vendor_rows = [r for r in rows if provider_matches_author(r["provider"], author)]
+    if vendor_rows:
+        v = max(vendor_rows, key=lambda r: r["price_in"])
+        out["vendor_price_in"], out["vendor_price_out"] = v["price_in"], v["price_out"]
+
+    native_context = max((r["context"] for r in rows if r["context"]), default=None)
+    credible = [
+        r for r in rows
+        if r["healthy"]
+        and not r["discount"]
+        and not (r["quant"] and _LOW_QUANT_RE.match(r["quant"]))
+        and not (native_context and r["context"]
+                 and r["context"] < native_context * _FLOOR_MIN_CONTEXT_FRACTION)
+    ]
+    if credible:
+        f = min(credible, key=lambda r: (r["price_in"], r["price_out"] or 0))
+        out.update({
+            "floor_price_in": f["price_in"], "floor_price_out": f["price_out"],
+            "floor_provider": f["provider"], "floor_quant": f["quant"],
+            "floor_context": f["context"],
+        })
+    return out
+
+
+# field → (price_scope, token direction, exact compare). Vendor list prices are
+# exact numbers, any move is real; the floor keeps the 5% jitter threshold.
+_ENDPOINT_PRICE_FIELDS: dict[str, tuple[str, str, bool]] = {
+    "vendor_price_in":  ("vendor", "input", True),
+    "vendor_price_out": ("vendor", "output", True),
+    "floor_price_in":   ("floor", "input", False),
+    "floor_price_out":  ("floor", "output", False),
+}
+
+
+def _price_changed(old: float | None, new: float | None, exact: bool) -> bool:
+    if old is None and new is None:
+        return False
+    if old is None or new is None:
+        return True
+    if exact:
+        return abs(new - old) > 1e-9
+    return old > 0 and abs((new - old) / old) >= _PRICE_EVENT_MIN_REL
+
+
+def endpoint_change_events(
+    name: str, stored: dict, fresh: dict, pending: dict
+) -> tuple[list[dict], dict, dict]:
+    """Debounced diff of stored vendor/floor prices against a fresh endpoint sample.
+
+    A change (including a value appearing or disappearing) is written only when
+    the SAME candidate value survives two consecutive samples; the first sighting
+    just lands in the pending buffer. Events fire only for numeric→numeric moves
+    (a provider delisting is not a reprice). Returns (model_events rows,
+    confirmed column updates, new pending buffer). Pure and unit-testable.
+    """
+    events: list[dict] = []
+    updates: dict = {}
+    new_pending = dict(pending)
+    floor_confirmed = False
+
+    for field, (scope, direction, exact) in _ENDPOINT_PRICE_FIELDS.items():
+        o, n = stored.get(field), fresh.get(field)
+        if scope == "floor" and n is None and o is not None:
+            # The credible set went empty (every row discounted/degraded), not a
+            # price move. price_in/out doubles as the display price, so keep the
+            # last-known value rather than blanking the model.
+            new_pending.pop(field, None)
+            continue
+        if not _price_changed(o, n, exact):
+            new_pending.pop(field, None)
+            continue
+        if field not in new_pending or new_pending[field] != n:
+            # First sighting of this candidate (or the candidate moved again):
+            # buffer it, change nothing. A single 3h/daily blip never fires.
+            new_pending[field] = n
+            continue
+        # Second consecutive sample with the same value: confirmed.
+        new_pending.pop(field)
+        updates[field] = n
+        if scope == "floor":
+            floor_confirmed = True
+        if o is None or n is None:
+            continue
+        rel = (n - o) / o
+        if scope == "vendor":
+            verb = "cut" if n < o else "raised"
+            summary = (f"{name}: vendor list price {verb} from ${o:g} to ${n:g} "
+                       f"per 1M {direction} tokens ({rel:+.0%})")
+        else:
+            via = f" via {fresh.get('floor_provider')}" if fresh.get("floor_provider") else ""
+            summary = (f"{name}: cheapest credible provider{via} now ${n:g} "
+                       f"per 1M {direction} tokens (was ${o:g}, {rel:+.0%})")
+        events.append({
+            "event_type": "price",
+            "price_scope": scope,
+            "summary": summary,
+            "old_value": f"{o:g}",
+            "new_value": f"{n:g}",
+        })
+
+    if floor_confirmed:
+        # Keep the floor metadata in step with the confirmed floor price; between
+        # confirmations it describes the last confirmed floor, not the pending one.
+        updates["floor_provider"] = fresh.get("floor_provider")
+        updates["floor_quant"] = fresh.get("floor_quant")
+        updates["floor_context"] = fresh.get("floor_context")
+
+    return events, updates, new_pending
+
+
 # Artificial Analysis `evaluations` field → our benchmark (display name, unit).
 # Scores arrive as 0–1 fractions, matching our '%' storage. The first three
 # overlap Epoch (AA only fills them when Epoch is missing); the last four are
@@ -792,7 +994,17 @@ def sync_benchmarks(conn: psycopg.Connection) -> int:
 
 
 def sync_pricing(conn: psycopg.Connection) -> int:
-    """Attach pricing + specs from OpenRouter's public catalog to registry models."""
+    """Attach specs + day-one pricing from OpenRouter's public catalog.
+
+    Phase U single-writer rule: the catalog's model-level price is a noisy blend
+    of the provider spread, so once a model has endpoint-derived prices
+    (pending_prices IS NOT NULL, set by sync_endpoint_prices) this step stops
+    writing its price columns — two writers on one column is exactly the
+    oscillation bug this replaced. Price events now come ONLY from the endpoint
+    sweep (debounced, vendor/floor scoped); this step still owns specs
+    (context/modalities/description) and context-change events, and gives brand
+    new models a base price until their first endpoint sweep.
+    """
     raw = _fetch(settings.openrouter_models_url, as_bytes=False)
     if raw is None:
         return 0
@@ -805,18 +1017,27 @@ def sync_pricing(conn: psycopg.Connection) -> int:
         return 0
 
     with conn.cursor() as cur:
-        cur.execute("SELECT id, epoch_key, name, price_in, price_out, context_window FROM models")
+        cur.execute(
+            """
+            SELECT id, epoch_key, name, price_in, price_out, context_window,
+                   (pending_prices IS NOT NULL) AS endpoint_managed
+            FROM models
+            """
+        )
         rows = cur.fetchall()
 
     count = 0
     event_count = 0
-    for model_id, epoch_key, name, old_in, old_out, old_ctx in rows:
+    for model_id, epoch_key, name, old_in, old_out, old_ctx, endpoint_managed in rows:
         rec = catalog.get(normalize_key(epoch_key or name))
         if rec is None:
             continue
-        events = pricing_change_events(
-            name, {"price_in": old_in, "price_out": old_out, "context_window": old_ctx}, rec
-        )
+        events = [
+            ev for ev in pricing_change_events(
+                name, {"price_in": old_in, "price_out": old_out, "context_window": old_ctx}, rec
+            )
+            if ev["event_type"] != "price"
+        ]
         try:
             with conn.cursor() as cur:
                 # Diff before overwrite: the change record IS the product
@@ -833,12 +1054,13 @@ def sync_pricing(conn: psycopg.Connection) -> int:
                         {**ev, "model_id": model_id,
                          "source_url": f"https://openrouter.ai/{rec['openrouter_id']}"},
                     )
-                cur.execute(
-                    """
-                    UPDATE models SET
-                        openrouter_id     = %(openrouter_id)s,
+                price_sql = "" if endpoint_managed else """
                         price_in          = %(price_in)s,
-                        price_out         = %(price_out)s,
+                        price_out         = %(price_out)s,"""
+                cur.execute(
+                    f"""
+                    UPDATE models SET
+                        openrouter_id     = %(openrouter_id)s,{price_sql}
                         context_window    = %(context_window)s,
                         input_modalities  = %(input_modalities)s,
                         output_modalities = %(output_modalities)s,
@@ -857,6 +1079,121 @@ def sync_pricing(conn: psycopg.Connection) -> int:
 
     log.info("pricing.synced", count=count, events=event_count)
     return count
+
+
+# Confirmed endpoint_change_events updates → models columns (whitelist; the
+# floor price lives in the existing price_in/out columns).
+_ENDPOINT_UPDATE_COLS: dict[str, str] = {
+    "vendor_price_in": "vendor_price_in",
+    "vendor_price_out": "vendor_price_out",
+    "floor_price_in": "price_in",
+    "floor_price_out": "price_out",
+    "floor_provider": "floor_provider",
+    "floor_quant": "floor_quant",
+    "floor_context": "floor_context",
+}
+
+
+def sync_endpoint_prices(conn: psycopg.Connection) -> int:
+    """Phase U sweep: per-provider vendor + floor prices for a rolling subset.
+
+    Each run takes the `endpoint_sweep_batch` oldest-synced models (NULLS FIRST,
+    so new models go first) and fetches their /endpoints payload with a politeness
+    delay. The cursor advances even on a failed fetch so a delisted model can't
+    pin the rotation (its last-known prices are kept). First successful sync
+    attaches values without events; after that, changes are debounced through
+    pending_prices and fire vendor/floor-scoped model_events on confirmation.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT id, name, openrouter_id, price_in, price_out,
+                   vendor_price_in, vendor_price_out, pending_prices
+            FROM models
+            WHERE openrouter_id IS NOT NULL
+            ORDER BY endpoints_synced_at ASC NULLS FIRST
+            LIMIT %s
+            """,
+            (settings.endpoint_sweep_batch,),
+        )
+        batch = cur.fetchall()
+
+    synced = 0
+    event_count = 0
+    for i, (model_id, name, or_id, floor_in, floor_out, vend_in, vend_out, pending) in enumerate(batch):
+        if i:
+            time.sleep(settings.endpoint_sweep_delay_seconds)
+        clean_id = _OR_VARIANT_RE.sub("", or_id or "")
+        fresh = None
+        raw = _fetch(settings.openrouter_endpoints_url.format(id=clean_id), as_bytes=False)
+        if raw is not None:
+            try:
+                fresh = parse_endpoints(json.loads(raw).get("data") or {}, clean_id.split("/")[0])
+            except Exception as exc:
+                log.warning("endpoints.parse_failed", model=name, error=str(exc))
+        try:
+            with conn.cursor() as cur:
+                if fresh is None:
+                    cur.execute(
+                        "UPDATE models SET endpoints_synced_at = NOW() WHERE id = %s",
+                        (model_id,),
+                    )
+                elif pending is None:
+                    # First endpoint sync: attach everything (the credible floor
+                    # replaces the blended base price), no events — a first
+                    # attachment is not a change. COALESCE keeps the base price
+                    # when no credible floor exists yet.
+                    cur.execute(
+                        """
+                        UPDATE models SET
+                            vendor_price_in     = %(vendor_price_in)s,
+                            vendor_price_out    = %(vendor_price_out)s,
+                            price_in            = COALESCE(%(floor_price_in)s, price_in),
+                            price_out           = COALESCE(%(floor_price_out)s, price_out),
+                            floor_provider      = %(floor_provider)s,
+                            floor_quant         = %(floor_quant)s,
+                            floor_context       = %(floor_context)s,
+                            pending_prices      = '{}'::jsonb,
+                            endpoints_synced_at = NOW(),
+                            updated_at          = NOW()
+                        WHERE id = %(id)s
+                        """,
+                        {**fresh, "id": model_id},
+                    )
+                else:
+                    stored = {
+                        "vendor_price_in": vend_in, "vendor_price_out": vend_out,
+                        "floor_price_in": floor_in, "floor_price_out": floor_out,
+                    }
+                    events, updates, new_pending = endpoint_change_events(name, stored, fresh, pending)
+                    for ev in events:
+                        cur.execute(
+                            """
+                            INSERT INTO model_events (model_id, event_type, price_scope,
+                                                      summary, old_value, new_value, source_url)
+                            VALUES (%(model_id)s, %(event_type)s, %(price_scope)s,
+                                    %(summary)s, %(old_value)s, %(new_value)s, %(source_url)s)
+                            """,
+                            {**ev, "model_id": model_id,
+                             "source_url": f"https://openrouter.ai/{clean_id}"},
+                        )
+                    set_parts = [f"{_ENDPOINT_UPDATE_COLS[k]} = %({k})s" for k in updates]
+                    set_sql = ("".join(p + ", " for p in set_parts)) + (
+                        "pending_prices = %(pending)s, endpoints_synced_at = NOW(), updated_at = NOW()"
+                    )
+                    cur.execute(
+                        f"UPDATE models SET {set_sql} WHERE id = %(id)s",
+                        {**updates, "pending": Json(new_pending), "id": model_id},
+                    )
+                    event_count += len(events)
+            conn.commit()
+            synced += 1
+        except Exception as exc:
+            conn.rollback()
+            log.warning("endpoints.update_failed", model=name, error=str(exc))
+
+    log.info("endpoints.synced", count=synced, events=event_count)
+    return synced
 
 
 def sync_aa_benchmarks(conn: psycopg.Connection) -> int:

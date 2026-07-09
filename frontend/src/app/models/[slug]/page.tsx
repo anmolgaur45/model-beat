@@ -96,11 +96,21 @@ function buildFaq(model: ModelDetail): { q: string; a: string }[] {
     faq.push({ q: `Who created ${name}?`, a: `${bits.join(', ')}.` })
   }
 
-  if (model.price_in != null || model.price_out != null) {
-    faq.push({
-      q: `How much does ${name} cost?`,
-      a: `${name} is priced at ${usd(model.price_in)} per million input tokens and ${usd(model.price_out)} per million output tokens (representative pricing via OpenRouter).`,
-    })
+  if (model.vendor_price_in != null || model.price_in != null || model.price_out != null) {
+    const hasVendor = model.vendor_price_in != null
+    const hasCheaperFloor =
+      hasVendor && model.floor_provider != null && model.price_in != null &&
+      model.price_in < (model.vendor_price_in as number)
+    let a: string
+    if (hasVendor) {
+      a = `${name}'s list price${model.vendor ? ` from ${model.vendor}` : ''} is ${usd(model.vendor_price_in ?? null)} per million input tokens and ${usd(model.vendor_price_out ?? null)} per million output tokens.`
+      if (hasCheaperFloor) {
+        a += ` The cheapest credible third-party provider on OpenRouter (${model.floor_provider}) serves it at ${usd(model.price_in)}/${usd(model.price_out)} per 1M.`
+      }
+    } else {
+      a = `${name} is served from ${usd(model.price_in)} per million input tokens and ${usd(model.price_out)} per million output tokens${model.floor_provider ? ` (cheapest credible provider on OpenRouter: ${model.floor_provider})` : ' (representative pricing via OpenRouter)'}.`
+    }
+    faq.push({ q: `How much does ${name} cost?`, a })
   }
 
   if (model.context_window) {
@@ -138,7 +148,9 @@ function metaDescription(model: ModelDetail): string {
   const facts: string[] = []
   const top = topBenchmarks(model, 1)[0]
   if (top) facts.push(`scores ${scoreLabel(top)} on ${top.benchmark}`)
-  if (model.price_in != null) facts.push(`${usd(model.price_in)}/${usd(model.price_out)} per 1M tokens`)
+  const metaIn = model.vendor_price_in ?? model.price_in
+  const metaOut = model.vendor_price_out ?? model.price_out
+  if (metaIn != null) facts.push(`${usd(metaIn)}/${usd(metaOut)} per 1M tokens`)
   if (model.context_window) facts.push(`${fmtContext(model.context_window)} context`)
   const lead = `${model.name}${model.vendor ? ` by ${model.vendor}` : ''}`
   const factPart = facts.length ? `${facts.join(', ')}. ` : ''
@@ -205,8 +217,15 @@ function toView(model: ModelDetail): ModelView {
     modelSlug: model.slug,
     description: model.description ?? synopsis(model),
     modalities: { in: parseMods(model.input_modalities), out: parseMods(model.output_modalities) },
-    priceIn: usd(model.price_in),
-    priceOut: usd(model.price_out),
+    // Phase U: the headline price is the vendor list price when we have it;
+    // the credible OpenRouter floor gets its own labeled cell when cheaper.
+    priceIn: usd(model.vendor_price_in ?? model.price_in),
+    priceOut: usd(model.vendor_price_out ?? model.price_out),
+    floor:
+      model.floor_provider != null && model.price_in != null &&
+      model.vendor_price_in != null && model.price_in < model.vendor_price_in
+        ? { in: usd(model.price_in), out: usd(model.price_out), provider: model.floor_provider }
+        : null,
     context: fmtContext(model.context_window),
     released: fmtReleased(model.released_at),
     providers: model.benchmarks.length > 0 ? [providerLabel] : [],

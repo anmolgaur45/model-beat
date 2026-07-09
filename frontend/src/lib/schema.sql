@@ -114,3 +114,18 @@ CREATE TABLE IF NOT EXISTS model_events (
 );
 CREATE INDEX IF NOT EXISTS model_events_detected_idx ON model_events (detected_at DESC);
 CREATE INDEX IF NOT EXISTS model_events_model_idx ON model_events (model_id);
+
+-- Phase U: price tracking v2 (per-provider, debounced). vendor_price_* is the
+-- first-party provider's list price from /endpoints; price_in/out becomes the
+-- cheapest CREDIBLE provider (no promos/degraded/sub-fp8/short-context) for
+-- endpoint-synced models. pending_prices is the debounce buffer (NULL = never
+-- endpoint-synced; '{}' = synced, nothing pending). endpoints_synced_at is the
+-- rolling-subset sweep cursor. price_scope: 'vendor' | 'floor' on price events.
+ALTER TABLE models ADD COLUMN IF NOT EXISTS vendor_price_in     FLOAT;
+ALTER TABLE models ADD COLUMN IF NOT EXISTS vendor_price_out    FLOAT;
+ALTER TABLE models ADD COLUMN IF NOT EXISTS floor_provider      TEXT;
+ALTER TABLE models ADD COLUMN IF NOT EXISTS floor_quant         TEXT;
+ALTER TABLE models ADD COLUMN IF NOT EXISTS floor_context       INT;
+ALTER TABLE models ADD COLUMN IF NOT EXISTS endpoints_synced_at TIMESTAMPTZ;
+ALTER TABLE models ADD COLUMN IF NOT EXISTS pending_prices      JSONB;
+ALTER TABLE model_events ADD COLUMN IF NOT EXISTS price_scope TEXT;

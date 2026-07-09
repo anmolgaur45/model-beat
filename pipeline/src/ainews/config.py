@@ -64,6 +64,14 @@ class Settings(BaseSettings):
     # OpenRouter lists but Epoch hasn't scored yet, so fresh releases appear
     # immediately (Phase O5). Epoch adopts the row once it publishes scores.
     openrouter_new_model_days: int = 60
+    # Price tracking v2 (Phase U): per-provider endpoint data. /endpoints is one
+    # call PER model, so each run sweeps only the `endpoint_sweep_batch` oldest-
+    # synced models (~12 x 8 runs/day covers all ~80 priced models daily) with a
+    # politeness delay between calls. Raise the batch, not the job schedule, if
+    # faster coverage is ever needed.
+    openrouter_endpoints_url: str = "https://openrouter.ai/api/v1/models/{id}/endpoints"
+    endpoint_sweep_batch: int = 12
+    endpoint_sweep_delay_seconds: float = 0.5
     # Artificial Analysis free API (Phase O5): individual benchmark scores for
     # models Epoch hasn't scored yet. Fills gaps only — Epoch stays authoritative.
     # Skipped when the key is unset (CI / unconfigured envs stay green).

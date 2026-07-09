@@ -18,6 +18,7 @@ from .processing.model_registry import (
     create_missing_models,
     sync_benchmarks,
     sync_pricing,
+    sync_endpoint_prices,
     sync_aa_benchmarks,
     link_model_coverage,
 )
@@ -221,12 +222,13 @@ def main() -> None:
 
         # Model registry (Phase K) — Epoch AI sync + news linkage. Fault-isolated:
         # an Epoch outage or schema change must not fail the run.
-        synced = created = benched = priced = aa_benched = linked = 0
+        synced = created = benched = priced = swept = aa_benched = linked = 0
         try:
             synced = sync_models(conn)
             created = create_missing_models(conn)
             benched = sync_benchmarks(conn)
             priced = sync_pricing(conn)
+            swept = sync_endpoint_prices(conn)
             aa_benched = sync_aa_benchmarks(conn)
             linked = link_model_coverage(conn)
         except Exception as exc:
@@ -239,7 +241,7 @@ def main() -> None:
         log.info(
             "pipeline.models",
             synced=synced, created=created, benched=benched,
-            priced=priced, aa_benched=aa_benched, linked=linked,
+            priced=priced, swept=swept, aa_benched=aa_benched, linked=linked,
         )
 
         log.info(

@@ -27,6 +27,7 @@ from ainews.processing.model_registry import (
     provider_matches_author,
     parse_endpoints,
     endpoint_change_events,
+    benchmark_change_event,
 )
 
 
@@ -615,6 +616,31 @@ def test_endpoint_change_floor_disappearing_keeps_last_known():
     events, updates, pending = endpoint_change_events(
         "Qwen", stored, fresh, {"floor_price_in": None})
     assert updates == {} and pending == {}
+
+
+# ── Phase V: benchmark history capture ─────────────────────────────────────────
+
+def test_benchmark_change_event_fires_on_meaningful_move():
+    ev = benchmark_change_event("GLM-5.2", "SWE-bench Verified", 0.682, 0.741, "%", "epoch", "epoch")
+    assert ev["event_type"] == "benchmark"
+    assert "68.2%" in ev["summary"] and "74.1%" in ev["summary"] and "improved" in ev["summary"]
+    assert ev["old_value"] == "0.682" and ev["new_value"] == "0.741"
+
+
+def test_benchmark_change_event_first_attach_and_jitter_are_silent():
+    assert benchmark_change_event("M", "GPQA Diamond", None, 0.8, "%", "epoch", "epoch") is None
+    # 2.5% move is under the 5% threshold
+    assert benchmark_change_event("M", "GPQA Diamond", 0.80, 0.82, "%", "epoch", "epoch") is None
+
+
+def test_benchmark_change_event_source_change_is_not_a_move():
+    # aa -> epoch adoption reflects methodology, not the model improving
+    assert benchmark_change_event("M", "AIME 2024/2025", 0.60, 0.75, "%", "aa", "epoch") is None
+
+
+def test_benchmark_change_event_index_unit_and_drop():
+    ev = benchmark_change_event("M", "Epoch Capabilities Index", 150.0, 140.0, "index", "epoch", "epoch")
+    assert "dropped" in ev["summary"] and "150" in ev["summary"] and "140" in ev["summary"]
 
 
 def test_endpoint_change_reverted_candidate_clears_pending():

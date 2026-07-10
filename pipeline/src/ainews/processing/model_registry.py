@@ -624,6 +624,49 @@ def endpoint_change_events(
     return events, updates, new_pending
 
 
+# ── Benchmark history (Phase V) ────────────────────────────────────────────────
+#
+# sync_benchmarks used to overwrite scores with no diffing, the same original sin
+# sync_pricing had before Phase U. Movement over time is only chartable if capture
+# starts now; history cannot be backfilled. Same 5% relative threshold as prices.
+
+def _fmt_score(value: float, unit: str) -> str:
+    if unit == "%":
+        return f"{value * 100:.1f}%"
+    return f"{value:g}"
+
+
+def _fmt_context(n: int) -> str:
+    if n >= 1_000_000:
+        return f"{n / 1_000_000:.1f}".rstrip("0").rstrip(".") + "M"
+    if n >= 1_000:
+        return f"{round(n / 1_000)}K"
+    return str(n)
+
+
+def benchmark_change_event(
+    name: str, benchmark: str, old, new: float, unit: str, old_source: str, new_source: str
+) -> dict | None:
+    """One model_events row (sans model_id) for a meaningful benchmark move, else None.
+
+    First attachment is not a change. A source change (aa -> epoch adoption) is a
+    methodology change, not the model moving, so it never fires. Pure and testable.
+    """
+    if old is None or old <= 0 or (old_source or "epoch") != (new_source or "epoch"):
+        return None
+    rel = (new - old) / old
+    if abs(rel) < _PRICE_EVENT_MIN_REL:
+        return None
+    verb = "improved" if new > old else "dropped"
+    return {
+        "event_type": "benchmark",
+        "summary": (f"{name}: {benchmark} {verb} from {_fmt_score(old, unit)} "
+                    f"to {_fmt_score(new, unit)} ({rel:+.0%})"),
+        "old_value": f"{old:g}",
+        "new_value": f"{new:g}",
+    }
+
+
 # Artificial Analysis `evaluations` field → our benchmark (display name, unit).
 # Scores arrive as 0–1 fractions, matching our '%' storage. The first three
 # overlap Epoch (AA only fills them when Epoch is missing); the last four are
@@ -936,9 +979,31 @@ def create_missing_models(conn: psycopg.Connection) -> int:
                             %(openrouter_id)s, %(price_in)s, %(price_out)s, %(context_window)s,
                             %(input_modalities)s, %(output_modalities)s, %(description)s)
                     ON CONFLICT (slug) DO NOTHING
+                    RETURNING id
                     """,
                     r,
                 )
+                inserted = cur.fetchone()
+                if inserted:
+                    # Phase V: new-model tracking is itself feed-worthy (the digest's
+                    # "New:" items and /models/changes read events uniformly).
+                    lead = r["name"] + (f" ({r['vendor']})" if r.get("vendor") else "")
+                    facts = []
+                    if r.get("price_in") is not None and r.get("price_out") is not None:
+                        facts.append(f"${r['price_in']:g}/${r['price_out']:g} per 1M")
+                    if r.get("context_window"):
+                        facts.append(f"{_fmt_context(r['context_window'])} context")
+                    summary = f"{lead} added to the tracker" + (
+                        f": {', '.join(facts)}." if facts else "."
+                    )
+                    cur.execute(
+                        """
+                        INSERT INTO model_events (model_id, event_type, summary, source_url)
+                        VALUES (%s, 'catalog', %s, %s)
+                        """,
+                        (inserted[0], summary,
+                         f"https://openrouter.ai/{r.get('openrouter_id') or ''}"),
+                    )
             conn.commit()
             count += 1
         except Exception as exc:
@@ -948,15 +1013,28 @@ def create_missing_models(conn: psycopg.Connection) -> int:
     return count
 
 
+def _existing_benchmarks(conn: psycopg.Connection) -> dict[tuple, tuple]:
+    """(model_id, benchmark) → (score, source) for the diff-before-overwrite pass."""
+    with conn.cursor() as cur:
+        cur.execute("SELECT model_id, benchmark, score, source FROM model_benchmarks")
+        return {(str(mid), b): (s, src) for (mid, b, s, src) in cur.fetchall()}
+
+
 def sync_benchmarks(conn: psycopg.Connection) -> int:
-    """Attach Epoch benchmark scores (ECI + core benchmarks) to registry models."""
+    """Attach Epoch benchmark scores (ECI + core benchmarks) to registry models.
+
+    Phase V: diffs before overwriting and records meaningful score moves as
+    model_events (the benchmark history capture; see benchmark_change_event).
+    """
     raw = _fetch(settings.epoch_benchmark_url, as_bytes=True)
     if raw is None:
         return 0
 
     with conn.cursor() as cur:
-        cur.execute("SELECT id, epoch_key FROM models WHERE epoch_key IS NOT NULL")
-        key_to_id = {normalize_key(k): mid for (mid, k) in cur.fetchall()}
+        cur.execute("SELECT id, epoch_key, name FROM models WHERE epoch_key IS NOT NULL")
+        rows = cur.fetchall()
+    key_to_id = {normalize_key(k): str(mid) for (mid, k, _n) in rows}
+    id_to_name = {str(mid): n for (mid, _k, n) in rows}
     if not key_to_id:
         return 0
 
@@ -967,13 +1045,29 @@ def sync_benchmarks(conn: psycopg.Connection) -> int:
         log.warning("benchmarks.parse_failed", error=str(exc))
         return 0
 
+    existing = _existing_benchmarks(conn)
     count = 0
+    event_count = 0
     for (nkey, benchmark), (score, unit) in scores.items():
         model_id = key_to_id.get(nkey)
         if model_id is None:
             continue
+        old_score, old_source = existing.get((model_id, benchmark), (None, "epoch"))
+        event = benchmark_change_event(
+            id_to_name.get(model_id, ""), benchmark, old_score, score, unit, old_source, "epoch"
+        )
         try:
             with conn.cursor() as cur:
+                if event:
+                    cur.execute(
+                        """
+                        INSERT INTO model_events (model_id, event_type, summary,
+                                                  old_value, new_value, source_url)
+                        VALUES (%(model_id)s, %(event_type)s, %(summary)s,
+                                %(old_value)s, %(new_value)s, 'https://epoch.ai/benchmarks')
+                        """,
+                        {**event, "model_id": model_id},
+                    )
                 cur.execute(
                     """
                     INSERT INTO model_benchmarks (model_id, benchmark, score, unit, source)
@@ -985,11 +1079,12 @@ def sync_benchmarks(conn: psycopg.Connection) -> int:
                 )
             conn.commit()
             count += 1
+            event_count += 1 if event else 0
         except Exception as exc:
             conn.rollback()
             log.warning("benchmarks.upsert_failed", error=str(exc))
 
-    log.info("benchmarks.synced", count=count)
+    log.info("benchmarks.synced", count=count, events=event_count)
     return count
 
 
@@ -1218,14 +1313,32 @@ def sync_aa_benchmarks(conn: psycopg.Connection) -> int:
         cur.execute("SELECT id, epoch_key, name FROM models")
         rows = cur.fetchall()
 
+    existing = _existing_benchmarks(conn)
     count = 0
+    event_count = 0
     for model_id, epoch_key, name in rows:
         scores = catalog.get(normalize_key(epoch_key or name))
         if not scores:
             continue
         for benchmark, (score, unit) in scores.items():
+            old_score, old_source = existing.get((str(model_id), benchmark), (None, "aa"))
+            # Diff only rows this upsert can actually change (the guard below
+            # never overwrites an epoch row); the source-change skip inside the
+            # helper covers the rest.
+            event = benchmark_change_event(name, benchmark, old_score, score, unit, old_source, "aa")
             try:
                 with conn.cursor() as cur:
+                    if event:
+                        cur.execute(
+                            """
+                            INSERT INTO model_events (model_id, event_type, summary,
+                                                      old_value, new_value, source_url)
+                            VALUES (%(model_id)s, %(event_type)s, %(summary)s,
+                                    %(old_value)s, %(new_value)s,
+                                    'https://artificialanalysis.ai/models')
+                            """,
+                            {**event, "model_id": model_id},
+                        )
                     cur.execute(
                         """
                         INSERT INTO model_benchmarks (model_id, benchmark, score, unit, source)
@@ -1238,11 +1351,12 @@ def sync_aa_benchmarks(conn: psycopg.Connection) -> int:
                     )
                 conn.commit()
                 count += 1
+                event_count += 1 if event else 0
             except Exception as exc:
                 conn.rollback()
                 log.warning("aa.upsert_failed", error=str(exc))
 
-    log.info("aa.synced", count=count)
+    log.info("aa.synced", count=count, events=event_count)
     return count
 
 

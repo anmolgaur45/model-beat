@@ -17,6 +17,7 @@ export function SiteFooter() {
           <h2>Browse</h2>
           <Link href="/">News</Link>
           <Link href="/models">Models</Link>
+          <Link href="/models/changes">Model changes</Link>
           <Link href="/digest">Digest</Link>
           <Link href="/about">About</Link>
           <Link href="/methodology">Methodology</Link>

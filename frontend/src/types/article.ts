@@ -54,6 +54,21 @@ export interface ModelBenchmark {
   source?: string // 'epoch' | 'aa' — which dataset the score came from
 }
 
+// Phase V: one row of a model's changelog (price/context/benchmark/catalog),
+// written append-only by the pipeline. Legacy price events (price_scope null)
+// are filtered out at the query layer.
+export interface ModelEvent {
+  id: string
+  event_type: string // 'price' | 'context' | 'benchmark' | 'catalog' | ...
+  price_scope: string | null // 'vendor' | 'floor' for price events
+  summary: string
+  detected_at: string // ISO timestamp
+  // joined for the /models/changes feed
+  model_slug?: string
+  model_name?: string
+  model_vendor?: string | null
+}
+
 export interface Model {
   id: string
   slug: string

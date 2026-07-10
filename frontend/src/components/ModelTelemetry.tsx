@@ -53,6 +53,8 @@ export interface ModelView {
   updated: string
   compareWith?: { name: string; href: string }[]
   news: { headline: string; url: string | null; source: string; date: string }[]
+  // Phase V: the model's changelog (price/context/benchmark/catalog events)
+  changelog?: { date: string; summary: string; tag: string }[]
 }
 
 function modelTier(pct: number): 'high' | 'mid' | 'low' {
@@ -327,6 +329,24 @@ export function ModelTelemetry({ view: M }: { view: ModelView }) {
                     <span>{n.headline}</span>
                   )}
                   <span className="anc-model-news-src">{n.source} · {n.date}</span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+
+        {M.changelog && M.changelog.length > 0 && (
+          <section className="m2-section">
+            <div className="m2-group-head">
+              <h3>Changelog</h3>
+              <span className="count">{M.changelog.length}</span>
+              <span className="rule" />
+            </div>
+            <ul className="anc-model-news m2-changelog">
+              {M.changelog.map((e, i) => (
+                <li key={i}>
+                  <span>{e.summary}</span>
+                  <span className="anc-model-news-src">{e.tag} · {e.date}</span>
                 </li>
               ))}
             </ul>

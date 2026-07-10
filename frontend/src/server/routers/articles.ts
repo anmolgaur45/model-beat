@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { TRPCError } from '@trpc/server'
 import { router, publicProcedure } from '../trpc'
 import sql from '@/lib/db'
-import type { Article, Cluster, Model, ModelBenchmark } from '@/types/article'
+import type { Article, Cluster, Model, ModelBenchmark, ModelEvent } from '@/types/article'
 import { BUCKETS } from '@/lib/modelBuckets'
 
 const CATEGORY_VALUES = [
@@ -662,7 +662,35 @@ export const articlesRouter = router({
         withArticles = clusters.map((c) => ({ ...c, articles: byCluster.get(c.id) ?? [] }))
       }
 
-      return { ...model, benchmarks, clusters: withArticles }
+      // Phase V changelog. Legacy blended-base price events (price_scope IS
+      // NULL, pre-2026-07-10) are excluded from every display surface — they
+      // are the noise Phase U replaced.
+      const events = await sql<ModelEvent[]>`
+        SELECT id, event_type, price_scope, summary, detected_at FROM model_events
+        WHERE model_id = ${model.id}
+          AND NOT (event_type = 'price' AND price_scope IS NULL)
+        ORDER BY detected_at DESC
+        LIMIT 40
+      `
+
+      return { ...model, benchmarks, clusters: withArticles, events }
+    }),
+
+  // Phase V: the change feed — recent model_events across all models, joined to
+  // their model for the vendor-grouped /models/changes page and RSS feed.
+  getModelEvents: publicProcedure
+    .input(z.object({ days: z.number().min(1).max(90).default(30) }))
+    .query(async ({ input }) => {
+      return sql<ModelEvent[]>`
+        SELECT e.id, e.event_type, e.price_scope, e.summary, e.detected_at,
+               m.slug AS model_slug, m.name AS model_name, m.vendor AS model_vendor
+        FROM model_events e
+        JOIN models m ON m.id = e.model_id
+        WHERE e.detected_at >= now() - make_interval(days => ${input.days})
+          AND NOT (e.event_type = 'price' AND e.price_scope IS NULL)
+        ORDER BY e.detected_at DESC
+        LIMIT 300
+      `
     }),
 
   // Compare view (Phase O3): 2–4 models side by side, each with full benchmark

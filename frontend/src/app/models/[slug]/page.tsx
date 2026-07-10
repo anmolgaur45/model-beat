@@ -4,7 +4,7 @@ import { SITE_URL } from '@/lib/site'
 import { notFound } from 'next/navigation'
 import { appRouter } from '@/server/routers/_app'
 import { createContext } from '@/server/trpc'
-import type { Model, ModelBenchmark, Cluster, Article } from '@/types/article'
+import type { Model, ModelBenchmark, ModelEvent, Cluster, Article } from '@/types/article'
 import { ModelTelemetry, type ModelView, type BenchRowView, type IndexGauge } from '@/components/ModelTelemetry'
 import { BUCKETS } from '@/lib/modelBuckets'
 import { benchmarkMeta, GROUP_ORDER, GROUP_LABELS } from '@/lib/benchmarks'
@@ -18,6 +18,14 @@ const SITE = SITE_URL
 type ModelDetail = Model & {
   benchmarks: ModelBenchmark[]
   clusters: (Cluster & { articles: Article[] })[]
+  events: ModelEvent[]
+}
+
+// event → short changelog tag shown next to the date
+function eventTag(e: ModelEvent): string {
+  if (e.event_type === 'price') return e.price_scope === 'floor' ? 'cheapest provider' : 'list price'
+  if (e.event_type === 'catalog') return 'tracked'
+  return e.event_type
 }
 
 const loadModel = cache(async (slug: string): Promise<ModelDetail | null> => {
@@ -236,6 +244,11 @@ function toView(model: ModelDetail): ModelView {
     bestAt,
     faq: buildFaq(model),
     updated: fmtUpdated(model.updated_at),
+    changelog: model.events.slice(0, 20).map((e) => ({
+      date: fmtReleased(e.detected_at),
+      summary: e.summary,
+      tag: eventTag(e),
+    })),
     news: model.clusters.map((c) => {
       const primary = c.articles[0]
       return {

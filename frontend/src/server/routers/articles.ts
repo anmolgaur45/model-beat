@@ -270,7 +270,11 @@ export const articlesRouter = router({
         ORDER BY
           (SELECT COALESCE(bool_and(a.source_name LIKE 'arXiv%'), false)
            FROM articles a WHERE a.cluster_id = clusters.id) ASC,
-          significance_score DESC
+          -- deterministic at equal scores (cheap column keys only; the display
+          -- sort refines ties with source_count/max_impact via bySignificance)
+          significance_score DESC,
+          article_count DESC,
+          first_published_at DESC
         LIMIT ${input.limit}
       `
 

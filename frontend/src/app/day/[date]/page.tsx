@@ -11,6 +11,7 @@ import { StoryCard } from '@/components/StoryCard'
 import { NavBar } from '@/components/NavBar'
 import { storyPath } from '@/lib/story'
 import { isPaperCluster } from '@/lib/papers'
+import { bySignificance } from '@/lib/storyRank'
 import { PapersFold } from '@/components/PapersFold'
 
 // Match the homepage's top-story gate: only a high-signal lead gets the hero card.
@@ -35,7 +36,7 @@ type DayCluster = Awaited<ReturnType<typeof loadDay>>[number]
 const loadDay = cache(async (date: string) => {
   const caller = appRouter.createCaller(createContext())
   const clusters = await caller.articles.getClusters({ date, limit: 100 })
-  return [...clusters].sort((a, b) => b.significance_score - a.significance_score)
+  return [...clusters].sort(bySignificance)
 })
 
 function longDate(date: string): string {

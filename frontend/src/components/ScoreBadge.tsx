@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import Link from 'next/link'
 
-import type { ScoreReceipt } from '@/lib/scoreReceipt'
+import { impactTier, type ScoreReceipt } from '@/lib/scoreReceipt'
 
 export type ScoreStyle = 'orb' | 'tile' | 'pill'
 export type { ScoreReceipt }
@@ -61,20 +61,21 @@ function ReceiptPanel({
     >
       <div className="anc-spop-head">Significance {display}/10</div>
       <div className="anc-spop-row">
-        {receipt.articleCount} {receipt.articleCount === 1 ? 'article' : 'articles'} across{' '}
-        {receipt.sourceCount} {receipt.sourceCount === 1 ? 'source' : 'sources'}
+        {receipt.articleCount} {receipt.articleCount === 1 ? 'article' : 'articles'} from{' '}
+        {receipt.sourceCount} {receipt.sourceCount === 1 ? 'outlet' : 'outlets'}
       </div>
       {sources.length > 0 && (
         <div className="anc-spop-row">
-          {receipt.sourceCount > sources.length ? 'Leading coverage: ' : 'Coverage: '}
+          {receipt.sourceCount > sources.length ? 'Led by ' : 'Coverage: '}
           {sources.join(', ')}
         </div>
       )}
       {receipt.maxImpact != null && (
-        <div className="anc-spop-row">Content impact {receipt.maxImpact}/10, AI-rated</div>
+        <div className="anc-spop-row">Impact: {impactTier(receipt.maxImpact)}</div>
       )}
       <div className="anc-spop-note">
-        Scores weigh independent, authoritative coverage over raw article counts.
+        Every story gets the same formula: independent, authoritative coverage first, adjusted
+        by an automated impact rating. Nothing is hand-picked.
       </div>
       <Link href="/methodology" className="anc-spop-link" onClick={(e) => e.stopPropagation()}>
         How scoring works →

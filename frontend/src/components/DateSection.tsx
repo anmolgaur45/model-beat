@@ -7,6 +7,7 @@ import { FeatureCard } from './FeatureCard'
 import { PapersFold } from './PapersFold'
 import { formatDateLabel } from '@/lib/timeFormat'
 import { isPaperCluster } from '@/lib/papers'
+import { bySignificance } from '@/lib/storyRank'
 import type { ScoreStyle } from './ScoreBadge'
 
 type ClusterWithArticles = Cluster & { articles: Article[] }
@@ -71,7 +72,7 @@ export function DateSection({ date, clusters, scoreStyle = 'orb' }: Props) {
 
   // Pure-arXiv paper clusters collapse into a shelf below the stories — a day
   // that's "20 stories · 80 papers" should read that way, not as a 100-item dump.
-  const all = [...clusters].sort((a, b) => b.significance_score - a.significance_score)
+  const all = [...clusters].sort(bySignificance)
   const sorted = all.filter((c) => !isPaperCluster(c))
   const papers = all.filter((c) => isPaperCluster(c))
   const label = formatDateLabel(date)

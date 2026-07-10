@@ -19,13 +19,13 @@ export const metadata: Metadata = {
   // absolute: the layout template appends "| Model Beat", which double-brands
   title: { absolute: 'The Model Beat Digest: the week in AI models' },
   description:
-    'A weekly email for people who build on LLMs: the stories that mattered, new models, price moves and deprecations from the Model Beat tracker. Free.',
+    'Three minutes every Thursday: the week\'s top AI stories ranked by significance, every model price and benchmark move from the Model Beat tracker, and a short personal take. Free.',
   alternates: { canonical: `${SITE}/digest` },
   openGraph: {
     type: 'website',
     title: 'The Model Beat Digest: the week in AI models',
     description:
-      'The stories that mattered, new models, price moves and deprecations. One email a week, for people who build on LLMs.',
+      'Three minutes every Thursday: the week\'s top AI stories ranked by significance, every model price and benchmark move from the Model Beat tracker, and a short personal take. Free.',
     url: `${SITE}/digest`,
   },
 }
@@ -42,7 +42,7 @@ const SECTIONS = [
     body: 'New models, price changes, benchmark movements and deprecations, straight from the Model Beat registry.',
   },
   {
-    tag: 'One take',
+    tag: 'Personal take',
     title: 'A short builder’s note',
     body: 'One honest paragraph on what this week’s changes mean if you ship on these models. Written by a human.',
   },
@@ -73,9 +73,9 @@ export default async function DigestPage() {
         <div className="anc-kicker">Free weekly email</div>
         <h1 className="anc-sw-h1">The week in AI models. One email, Thursdays.</h1>
         <p className="anc-sw-lead">
-          Model Beat watches ~45 feeds around the clock and tracks 140+ models with benchmarks and
-          pricing. The digest is the distilled version: what mattered, what changed, and what it
-          means if you build on these models. Read it in three minutes, skip the other fifty tabs.
+          Three minutes every Thursday: the week&rsquo;s top stories ranked by our significance
+          engine, every price move, benchmark jump and new model from the 140+ we track, and a
+          short personal take. Written from our own tracker data, not paraphrased headlines.
         </p>
 
         {teaser && teaser.rows.length > 0 && (

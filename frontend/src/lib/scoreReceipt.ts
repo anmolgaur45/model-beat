@@ -9,6 +9,16 @@ export interface ScoreReceipt {
   maxImpact: number | null // highest LLM impact rating in the cluster, 1-10
 }
 
+// The 1-10 LLM impact rating rendered as a claim the reader can sanity-check
+// against the headline. Never show the raw number: it's an internal multiplier,
+// and a second number invites arithmetic the popover can't explain.
+export function impactTier(n: number): string {
+  if (n >= 9) return 'landmark'
+  if (n >= 7) return 'major development'
+  if (n >= 5) return 'notable'
+  return 'routine coverage'
+}
+
 // Builds a receipt from the cluster shape the cards already receive. Falls back
 // gracefully when the server hasn't sent the computed fields (e.g. search rows).
 export function receiptFromCluster(c: {

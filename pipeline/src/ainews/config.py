@@ -11,7 +11,6 @@ class Settings(BaseSettings):
     database_password: str
     database_ssl_ca: str = ""
 
-    anthropic_api_key: str = ""
     # 0.38 merged topically-similar-but-distinct stories (see tasks/f1-findings.md);
     # 0.30 + the centroid check keeps multi-outlet coverage of the same story
     # while splitting topical neighbors (picked by simulation sweep on 14d of prod data)

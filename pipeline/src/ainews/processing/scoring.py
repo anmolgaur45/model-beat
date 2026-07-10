@@ -2,9 +2,9 @@ import json
 
 import psycopg
 import structlog
-from anthropic import Anthropic
 
 from ..config import settings
+from .llm import gemini_text
 
 log = structlog.get_logger()
 
@@ -61,12 +61,12 @@ _BACKFILL_DAYS = 4
 
 
 def score_pending(conn: psycopg.Connection, batch_size: int = 10) -> int:
-    """Score articles with no impact_score using Claude Haiku in batches.
+    """Score articles with no impact_score using Vertex Gemini in batches.
 
     Only processes the latest 300 articles or the last 4 days, whichever is more.
     """
-    if not settings.anthropic_api_key:
-        log.warning("scoring.skipped", reason="no ANTHROPIC_API_KEY configured")
+    if not settings.vertex_project:
+        log.warning("scoring.skipped", reason="no VERTEX_PROJECT configured")
         return 0
 
     from datetime import datetime, timedelta, timezone
@@ -90,7 +90,6 @@ def score_pending(conn: psycopg.Connection, batch_size: int = 10) -> int:
         log.info("scoring.none_pending")
         return 0
 
-    client = Anthropic(api_key=settings.anthropic_api_key)
     total = 0
     fallback_batches = 0
 
@@ -98,23 +97,24 @@ def score_pending(conn: psycopg.Connection, batch_size: int = 10) -> int:
         batch = rows[i : i + batch_size]
         prompt = _BATCH_PROMPT.format(articles=_format_articles(batch))
 
-        try:
-            response = client.messages.create(
-                model="claude-haiku-4-5-20251001",
-                max_tokens=512,
-                messages=[{"role": "user", "content": prompt}],
-            )
-            scores, failed = _parse_batch_response(response.content[0].text.strip(), batch)
-            if failed:
-                fallback_batches += 1
-        except Exception as exc:
-            log.warning("scoring.batch_failed", batch_start=i, error=str(exc))
-            scores = {str(row[0]): 5 for row in batch}
+        raw = gemini_text(prompt)
+        if raw is None:
+            # Leave the batch NULL so the next run retries it. Stamping the
+            # neutral fallback here made outages permanent: 5 days of articles
+            # got written impact 5 during the 2026-07-05 credit exhaustion and
+            # could not self-heal. NULL already scores as neutral downstream.
+            log.warning("scoring.batch_failed", batch_start=i)
+            fallback_batches += 1
+            continue
+        scores, failed = _parse_batch_response(raw.strip(), batch)
+        if failed:
             fallback_batches += 1
 
         with conn.cursor() as cur:
             for article_id, _, _, _ in batch:
-                score = scores.get(str(article_id), 5)
+                score = scores.get(str(article_id))
+                if score is None:
+                    continue
                 cur.execute(
                     "UPDATE articles SET impact_score = %s WHERE id = %s",
                     (score, article_id),

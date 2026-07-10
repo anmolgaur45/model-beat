@@ -7,10 +7,10 @@ from datetime import datetime, timedelta, timezone
 import numpy as np
 import psycopg
 import structlog
-from anthropic import Anthropic
 
 from ..config import settings
 from ..sources import get_organization
+from .llm import gemini_text
 
 log = structlog.get_logger()
 
@@ -333,27 +333,22 @@ _MAX_ADJUDICATE_PAIRS = 60
 
 
 def _adjudicate_same_event(headline_pairs: list[tuple[str, str]]) -> list[bool]:
-    """Ask Haiku which headline pairs describe the same news event.
+    """Ask Vertex Gemini which headline pairs describe the same news event.
 
-    Returns one bool per input pair. Fails closed (all False) on a missing key or
-    any error, so the adjudicator can only ever add merges the LLM affirmed — it
-    never widens the false-merge surface the 0.30 threshold guards.
+    Returns one bool per input pair. Fails closed (all False) when unconfigured
+    or on any error, so the adjudicator can only ever add merges the LLM
+    affirmed — it never widens the false-merge surface the 0.30 threshold guards.
     """
     if not headline_pairs:
         return []
-    if not settings.anthropic_api_key:
-        return [False] * len(headline_pairs)
 
     lines = [f'{n}. A: "{a}"\n   B: "{b}"' for n, (a, b) in enumerate(headline_pairs, 1)]
     prompt = _ADJUDICATE_PROMPT.format(pairs="\n".join(lines))
+    raw = gemini_text(prompt)
+    if raw is None:
+        return [False] * len(headline_pairs)
     try:
-        client = Anthropic(api_key=settings.anthropic_api_key)
-        response = client.messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=1024,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        raw = response.content[0].text.strip()
+        raw = raw.strip()
         if raw.startswith("```"):
             parts = raw.split("```")
             raw = parts[1].lstrip("json").strip() if len(parts) > 1 else raw

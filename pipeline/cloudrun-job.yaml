@@ -11,8 +11,9 @@
 #
 #   3. Create secrets (after rotating credentials):
 #      printf "DB_PASSWORD"     | gcloud secrets create ainews-db-password    --data-file=-
-#      printf "ANTHROPIC_KEY"   | gcloud secrets create ainews-anthropic-key  --data-file=-
 #      printf "CRON_SECRET"     | gcloud secrets create ainews-cron-secret    --data-file=-
+#      (printf, not echo, and never from PowerShell Out-File: a BOM or trailing
+#       newline in a secret breaks header auth invisibly — see 2026-07-10 incident)
 #
 #   4. Create service account and grant roles:
 #      gcloud iam service-accounts create ainews-pipeline \
@@ -90,11 +91,6 @@ spec:
                     secretKeyRef:
                       name: ainews-db-password
                       key: "1"
-                - name: ANTHROPIC_API_KEY
-                  valueFrom:
-                    secretKeyRef:
-                      name: anthropic-api-key
-                      key: "1"
                 - name: VERTEX_PROJECT
                   value: "ai-news-calendar-493510"
                 # Apex domain, NOT the legacy .vercel.app host — that host 308s to
@@ -102,11 +98,13 @@ spec:
                 # redirects, so the old URL would silently no-op.
                 - name: REVALIDATE_URL
                   value: "https://themodelbeat.com/api/revalidate"
+                # "latest", not a pinned version: version 1 carried a BOM that
+                # broke revalidation for a week (2026-07-10 incident); v2 is clean.
                 - name: CRON_SECRET
                   valueFrom:
                     secretKeyRef:
                       name: ainews-cron-secret
-                      key: "1"
+                      key: "latest"
                 - name: AA_API_KEY
                   valueFrom:
                     secretKeyRef:

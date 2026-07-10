@@ -81,7 +81,10 @@ export function StoryCard({ cluster, showDate = false, scoreStyle = 'orb', highl
               {cluster.article_count > 1 ? ` +${cluster.article_count - 1}` : ''}
             </span>
             <span>·</span>
-            <span>{showDate ? new Date(cluster.first_published_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : timeAgo(cluster.first_published_at)}</span>
+            {/* suppressHydrationWarning: relative times legitimately drift
+                between the ISR-cached HTML and hydration ("7h ago" vs "8h
+                ago"); without this React regenerates the whole tree. */}
+            <span suppressHydrationWarning>{showDate ? new Date(cluster.first_published_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : timeAgo(cluster.first_published_at)}</span>
           </span>
         </span>
 
@@ -141,7 +144,7 @@ export function StoryCard({ cluster, showDate = false, scoreStyle = 'orb', highl
                       >
                         {a.source_name}
                       </a>
-                      <span className="anc-srctime">{timeAgo(a.published_at)}</span>
+                      <span className="anc-srctime" suppressHydrationWarning>{timeAgo(a.published_at)}</span>
                     </div>
                   ))}
                   <div className="anc-card-actions" style={{ marginTop: 8 }}>

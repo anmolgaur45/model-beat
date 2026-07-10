@@ -26,7 +26,7 @@ export function FeatureCard({ cluster }: Props) {
       <div className="anc-fmain">
         <div className="anc-frow">
           <span className="anc-ftag">★ Top story · {label}</span>
-          {primary && <span className="anc-ftime">{timeAgo(primary.published_at)}</span>}
+          {primary && <span className="anc-ftime" suppressHydrationWarning>{timeAgo(primary.published_at)}</span>}
         </div>
         <h3>{cluster.headline}</h3>
         {(cluster.summary ?? primary?.body_excerpt) && (

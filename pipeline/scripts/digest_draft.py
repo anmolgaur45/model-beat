@@ -4,7 +4,7 @@ Emits markdown to stdout and pipeline/digest/draft-YYYY-MM-DD.md (gitignored):
 top editorial clusters with themodelbeat.com permalinks, the model-moves
 section (model_events + new tracker models), and marked placeholders for the
 parts only a human (or an in-session curation pass, see .claude/skills/digest)
-may write: subject, preview, story cut-down, and the "One take". This script
+may write: subject, preview, story cut-down, and the "Personal take". This script
 never sends anything.
 
 Usage: cd pipeline && python scripts/digest_draft.py [days]
@@ -109,7 +109,7 @@ def main() -> None:
         lines.append(f"- New: {name} ({vendor}; {'; '.join(bits)}). {SITE}/models/{slug}")
     lines += [
         "",
-        "## One take",
+        "## Personal take",
         "",
         "[TO WRITE: Anmol's paragraph. If Claude drafts it, label it",
         '"Reference draft, rewrite this in your own words before sending".]',

@@ -692,7 +692,21 @@ a.anc-tick:hover { color: var(--accent-text); }
    above the day pages' ghost date number. */
 .anc-mstrip { position: relative; z-index: 2; max-width: 1100px; width: calc(100% - 48px); margin: 14px auto 0; padding: 9px 14px; border: 1px solid var(--line); border-radius: 12px; background: linear-gradient(180deg, var(--bg-card-strong), var(--bg-card)); display: flex; align-items: center; gap: 14px; }
 .anc-mstrip-label { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--accent-text); white-space: nowrap; }
-.anc-mstrip-list { list-style: none; margin: 0; padding: 0; display: flex; align-items: center; gap: 16px; min-width: 0; overflow: hidden; }
+/* flex:1 plus space-evenly distributes the top-3 across the band's middle;
+   the left-clustered list read as misaligned against the dead space before
+   the right-side links (design review 2026-07-10). */
+.anc-mstrip-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-evenly;
+  flex: 1;
+  gap: 16px;
+  min-width: 0;
+  overflow: hidden;
+}
 .anc-mstrip-list li { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
 .anc-mstrip-list .rk { font-family: var(--font-mono); font-size: 10.5px; color: var(--text3); }
 .anc-mstrip-list .nm { font-size: 13px; font-weight: 600; color: var(--text); }
@@ -2004,3 +2018,316 @@ mark.anc-hl { background: var(--accent-dim); color: var(--accent-text); border-r
   color: #fff;
   flex-shrink: 0;
 }
+
+/* ─── Digest teaser card (Phase W) ──────────────────────────────────────────────
+   The floating digest signup widget (redesigned 2026-07-10, databubble
+   pattern): fixed bottom-right, slides up after real scroll, dismissible for
+   21 days, silenced forever once subscribed. Never part of the content flow,
+   so it can never break a page's layout. Mounted once from the root layout. */
+
+.anc-dgc {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 70; /* above sharepop (60) */
+  width: min(340px, calc(100vw - 24px));
+  padding: 14px 16px 12px;
+  border: 1px solid var(--accent-line);
+  border-radius: 14px;
+  /* Opaque over any content (same layering trick as .anc-sharepop). */
+  background: linear-gradient(var(--bg-card-strong), var(--bg-card-strong)), var(--bg);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.38), 0 0 0 1px var(--accent-dim);
+}
+
+.anc-dgc-head { display: flex; align-items: center; gap: 8px; }
+.anc-dgc-dot {
+  flex: none;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
+  animation: anc-pulse-orb 2.4s ease-in-out infinite;
+}
+.anc-dgc-kicker {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent-text);
+}
+.anc-dgc-x {
+  flex: none;
+  margin-left: auto;
+  display: grid;
+  place-items: center;
+  width: 22px; height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  color: var(--text3);
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+}
+.anc-dgc-x:hover { color: var(--text); background: var(--bg-card-strong); }
+
+.anc-dgc-state {
+  margin: 9px 0 0;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text3);
+}
+
+.anc-dgc-rows {
+  list-style: none;
+  margin: 7px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.anc-dgc-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+  font-size: 12.5px;
+  line-height: 1.35;
+  color: var(--text2);
+}
+.anc-dgc-tick {
+  flex: none;
+  width: 5px; height: 5px;
+  margin-top: 6px; /* optically centers on the first text line */
+  border-radius: 50%;
+  background: var(--accent);
+}
+.anc-dgc-tick.is-story { background: var(--text3); }
+.anc-dgc-sum {
+  flex: 1;
+  min-width: 0;
+  /* Wrap up to two lines, then clip — nothing on the card should ever need
+     an expand affordance. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.anc-dgc-chip {
+  flex: none;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--accent-text);
+}
+.anc-dgc-chip.bad { color: var(--danger); }
+.anc-dgc-chip.neutral { color: var(--text3); letter-spacing: 0.06em; }
+
+.anc-dgc-promise {
+  margin: 10px 0 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--text2);
+}
+.anc-dgc-form { display: flex; gap: 7px; }
+.anc-dgc-email { flex: 1; min-width: 0; padding: 9px 12px; font-size: 13px; border-radius: 10px; }
+.anc-dgc-btn {
+  flex: none;
+  align-self: stretch;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 13px;
+  font-size: 12.5px;
+  border-radius: 10px;
+  white-space: nowrap;
+}
+.anc-dgc-arrow { display: inline-block; transition: transform 0.16s ease; }
+.anc-dgc-btn:hover .anc-dgc-arrow { transform: translateX(2px); }
+.anc-dgc-trust {
+  margin: 7px 0 0;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--text3);
+}
+
+.anc-dgc-ok {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.anc-dgc-check {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  border: 1px solid var(--accent-line);
+  background: var(--accent-dim);
+  color: var(--accent-text);
+}
+.anc-dgc-ok div { display: flex; flex-direction: column; gap: 2px; }
+.anc-dgc-ok strong { font-size: 13.5px; color: var(--text); }
+.anc-dgc-ok span { font-size: 12.5px; color: var(--text2); }
+
+@media (max-width: 480px) {
+  .anc-dgc { right: 10px; bottom: 10px; left: 10px; width: auto; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .anc-dgc-dot { animation: none !important; }
+  .anc-dgc-arrow { transition: none; }
+}
+
+/* ─── /digest live week section (Phase W3) ─────────────────────────────────────
+   The page shows the product: the same composed rows the floating card uses,
+   two extra, with links. Chips reuse .anc-dgc-chip. */
+
+.anc-dgweek {
+  margin: 26px 0 6px;
+  padding: 18px 20px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: linear-gradient(180deg, var(--bg-card-strong), var(--bg-card));
+}
+.anc-dgweek-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.anc-dgweek-head h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+.anc-dgweek-live {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text3);
+}
+/* Issue pages (Phase W4): digest formatting on top of the base prose styles.
+   Scannability rules: one story per block, a headline that reads alone
+   (numbered — the stories are ranked by coverage), body relegated to text2,
+   the link as a consistent affordance ending each block. */
+.anc-issue h2 {
+  margin: 42px 0 4px;
+  padding-top: 22px;
+  border-top: 1px solid var(--line);
+}
+.anc-issue h3 {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text);
+  margin: 26px 0 6px;
+}
+.anc-issue p { margin: 0 0 12px; }
+.anc-issue strong { color: var(--text); }
+/* Tailwind preflight strips list markers globally; restore real bullets here
+   (flex on the ul would ALSO suppress markers, so plain block + spacing). */
+.anc-issue ul { list-style: disc; margin: 14px 0; padding-left: 22px; }
+.anc-issue li { display: list-item; margin: 0 0 12px; padding-left: 4px; }
+.anc-issue li::marker { color: var(--accent); }
+.anc-issue a { font-weight: 550; }
+/* The personal take reads as a hand-written note: accent-edged, set apart. */
+.anc-issue blockquote {
+  margin: 14px 0;
+  padding: 14px 18px;
+  border-left: 3px solid var(--accent);
+  border-radius: 0 12px 12px 0;
+  background: linear-gradient(180deg, var(--bg-card-strong), var(--bg-card));
+}
+.anc-issue blockquote p { margin: 0 0 10px; color: var(--text2); }
+.anc-issue blockquote p:last-child { margin-bottom: 0; }
+
+/* Past-issue preview cards on /digest/archive (Phase W4). */
+.anc-iss-list { display: flex; flex-direction: column; gap: 12px; margin-top: 6px; }
+.anc-iss-card {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 16px 20px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: linear-gradient(180deg, var(--bg-card-strong), var(--bg-card));
+  transition: border-color 0.15s ease;
+}
+.anc-iss-card:hover { border-color: var(--accent-line); }
+.anc-iss-date {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text3);
+}
+.anc-iss-title { font-size: 16px; font-weight: 700; letter-spacing: -0.01em; color: var(--text); }
+.anc-iss-preview { font-size: 13px; line-height: 1.5; color: var(--text2); }
+.anc-iss-read { margin-top: 3px; font-size: 12.5px; font-weight: 550; color: var(--accent-text); }
+
+/* "Read the previous issues": one wide card to the archive under the week
+   card (replaces the footer's archive link AND an inline issue list — both
+   rejected 2026-07-10: footer crowding, list would stack up weekly). */
+.anc-dgprev {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 14px 0 6px;
+  padding: 14px 20px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: linear-gradient(180deg, var(--bg-card-strong), var(--bg-card));
+  transition: border-color 0.15s ease;
+}
+.anc-dgprev:hover { border-color: var(--accent-line); }
+.anc-dgprev-label { font-size: 14px; font-weight: 650; color: var(--text); }
+.anc-dgprev-count {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text3);
+  white-space: nowrap;
+}
+.anc-dgprev-arrow { margin-left: auto; color: var(--accent-text); transition: transform 0.16s ease; }
+.anc-dgprev:hover .anc-dgprev-arrow { transform: translateX(3px); }
+.anc-dgweek-rows {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.anc-dgweek-rows li {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  min-width: 0;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--text2);
+}
+.anc-dgweek-tick {
+  flex: none;
+  width: 5px; height: 5px;
+  margin-top: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.anc-dgweek-tick.is-story { background: var(--text3); }
+.anc-dgweek-rows a { color: var(--text); font-weight: 550; }
+.anc-dgweek-rows a:hover { color: var(--accent-text); }
+.anc-dgweek-rows .anc-dgc-chip { margin-top: 2px; }
+
+
+
+

@@ -5,6 +5,7 @@ import { SITE_URL as SITE } from '@/lib/site'
 import { comparePairs } from '@/lib/comparePairs'
 import { BEST_VIEWS } from '@/lib/bestModels'
 import { storyPath } from '@/lib/story'
+import { listIssues } from '@/lib/digestIssues'
 
 export const revalidate = 3600
 
@@ -81,7 +82,15 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: `${SITE}/models`, lastModified: new Date(), changeFrequency: 'daily', priority: 0.8 },
     { url: `${SITE}/models/compare`, lastModified: new Date(), changeFrequency: 'weekly', priority: 0.6 },
     { url: `${SITE}/models/changes`, lastModified: new Date(), changeFrequency: 'daily', priority: 0.7 },
-    { url: `${SITE}/digest`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.6 },
+    { url: `${SITE}/digest`, lastModified: new Date(), changeFrequency: 'weekly', priority: 0.6 },
+    { url: `${SITE}/digest/archive`, lastModified: new Date(), changeFrequency: 'weekly', priority: 0.5 },
+    // Sent digest issues (Phase W4) — committed markdown, one page each.
+    ...listIssues().map((i) => ({
+      url: `${SITE}/digest/${i.date}`,
+      lastModified: new Date(i.date + 'T12:00:00Z'),
+      changeFrequency: 'yearly' as const,
+      priority: 0.5,
+    })),
     { url: `${SITE}/about`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.5 },
     { url: `${SITE}/methodology`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.5 },
     ...BEST_VIEWS.map((v) => ({

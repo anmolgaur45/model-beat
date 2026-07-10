@@ -69,6 +69,33 @@ export interface ModelEvent {
   model_vendor?: string | null
 }
 
+// Phase W: the digest teaser — composed rows (real movement first, catalog
+// bursts collapsed to one line, top stories mixed in) from the trailing 7
+// days. Powers the floating signup card and /digest's live week section.
+export interface DigestTeaserEvent extends ModelEvent {
+  delta: string | null // signed relative change, e.g. '+57.9%'; null = no chip
+  tone: 'good' | 'bad' | 'neutral'
+}
+
+export interface TeaserRow {
+  key: string
+  kind: 'event' | 'story'
+  text: string
+  chip: string | null // '+57.9%', 'NEW' — or null for no chip
+  tone: 'good' | 'bad' | 'neutral'
+  // Destination for surfaces that link rows (/digest). The floating card
+  // deliberately ignores this: its rows are never links (see roadmap rules).
+  href?: string
+}
+
+// No issue/week state: the rows are a live rolling-week view, and labels that
+// claimed identity with the sent issue proved false the moment post-send
+// events landed (caught by Anmol 2026-07-10). Surfaces label it "This week on
+// the beat" and link the sent issue BY DATE instead.
+export interface DigestTeaser {
+  rows: TeaserRow[]
+}
+
 export interface Model {
   id: string
   slug: string

@@ -28,6 +28,11 @@ export function DigestForm({ source = 'digest', compact = false }: { source?: st
       })
       if (res.ok) {
         setStatus('success')
+        // Phase W: a subscriber from ANY form silences the floating teaser
+        // card (it checks this flag before showing).
+        try {
+          localStorage.setItem('mb-digest-subscribed', '1')
+        } catch {}
       } else {
         const data = await res.json().catch(() => ({}))
         setError(data.error === 'invalid_email' ? 'That email doesn’t look right.' : 'Something went wrong. Try again.')

@@ -2,8 +2,9 @@ import { z } from 'zod'
 import { TRPCError } from '@trpc/server'
 import { router, publicProcedure } from '../trpc'
 import sql from '@/lib/db'
-import type { Article, Cluster, Model, ModelBenchmark, ModelEvent } from '@/types/article'
+import type { Article, Cluster, DigestTeaser, Model, ModelBenchmark, ModelEvent } from '@/types/article'
 import { BUCKETS } from '@/lib/modelBuckets'
+import { composeRows, eventDelta, eventRank, floorFactRow, type FloorFact } from '@/lib/digestTeaser'
 
 const CATEGORY_VALUES = [
   'model-releases', 'research-papers', 'company-news', 'product-launches',
@@ -692,6 +693,68 @@ export const articlesRouter = router({
         LIMIT 300
       `
     }),
+
+  // Phase W: the digest teaser — composed rows (movement events first, catalog
+  // bursts collapsed, top stories mixed in) from the trailing 7 days, for the
+  // floating signup card and /digest's live week section. Rolling window with
+  // NO reset at send time: Thu-Sat the same query naturally shows the
+  // just-shipped issue's material, so the card is never empty on the
+  // high-traffic send day.
+  getDigestTeaser: publicProcedure
+    .input(z.object({ rows: z.number().min(3).max(6).default(3) }).optional())
+    .query(async ({ input }): Promise<DigestTeaser> => {
+    const maxRows = input?.rows ?? 3
+    const [eventRows, stories, facts] = await Promise.all([
+      sql<(ModelEvent & { old_value: string | null; new_value: string | null })[]>`
+        SELECT e.id, e.event_type, e.price_scope, e.summary, e.detected_at,
+               e.old_value, e.new_value,
+               m.slug AS model_slug, m.name AS model_name, m.vendor AS model_vendor
+        FROM model_events e
+        JOIN models m ON m.id = e.model_id
+        WHERE e.detected_at >= now() - interval '7 days'
+          AND NOT (e.event_type = 'price' AND e.price_scope IS NULL)
+        ORDER BY e.detected_at DESC
+        LIMIT 100
+      `,
+      sql<{ id: string; headline: string }[]>`
+        SELECT id, headline FROM clusters
+        WHERE first_published_at >= now() - interval '7 days'
+        ORDER BY significance_score DESC, first_published_at DESC
+        LIMIT 3
+      `,
+      // The registry's insider hook: the endpoint-synced model with the
+      // biggest credible-floor discount vs its vendor list price (Phase U
+      // data no aggregator surfaces). Feeds one fact row when the week has
+      // no movement events of its own. Candidates need real news coverage
+      // (>= 3 linked clusters): a huge discount on a model nobody writes
+      // about is trivia, not a hook (the first pick was MiniMax-M2.5 at
+      // 75% off with zero coverage — accurate and worthless).
+      sql<FloorFact[]>`
+        SELECT m.slug, m.name, m.price_in, m.vendor_price_in, m.floor_provider
+        FROM models m
+        JOIN (
+          SELECT model_id, count(*) AS n FROM model_clusters GROUP BY model_id
+        ) c ON c.model_id = m.id AND c.n >= 3
+        WHERE m.pending_prices IS NOT NULL
+          AND m.vendor_price_in > 0 AND m.price_in > 0
+          AND m.price_in < m.vendor_price_in AND m.floor_provider IS NOT NULL
+        ORDER BY m.price_in / m.vendor_price_in ASC
+        LIMIT 1
+      `,
+    ])
+    const events = eventRows
+      .sort(
+        (a, b) =>
+          eventRank(a.event_type, a.price_scope) - eventRank(b.event_type, b.price_scope) ||
+          +new Date(b.detected_at) - +new Date(a.detected_at),
+      )
+      .map(({ old_value, new_value, ...e }) => ({
+        ...e,
+        ...eventDelta(e.event_type, old_value, new_value),
+      }))
+    const fact = facts[0] ? floorFactRow(facts[0]) : null
+    return { rows: composeRows(events, stories, fact, maxRows) }
+  }),
 
   // Compare view (Phase O3): 2–4 models side by side, each with full benchmark
   // rows, ECI headline, and per-bucket composites. Bucket percentiles are ranked

@@ -5,6 +5,7 @@ import { SpeedInsights } from '@vercel/speed-insights/next'
 import './globals.css'
 import { Providers } from './providers'
 import { SiteFooter } from '@/components/SiteFooter'
+import { DigestTeaser } from '@/components/DigestTeaser'
 import { SITE_URL } from '@/lib/site'
 
 const geistSans = Geist({
@@ -139,6 +140,10 @@ export default function RootLayout({
         />
         <Providers>{children}</Providers>
         <SiteFooter />
+        {/* Phase W: the floating digest signup widget — one mount for the whole
+            site; the island derives copy/source from the pathname and stays
+            hidden on excluded pages and for dismissed/subscribed visitors. */}
+        <DigestTeaser />
         <Analytics />
         <SpeedInsights />
       </body>

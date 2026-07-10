@@ -37,6 +37,15 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   productionBrowserSourceMaps: false,
+  // Digest issue markdown (Phase W4) is read with fs at render time when a
+  // revalidate re-renders these routes on Vercel; without explicit tracing
+  // the .md files wouldn't ship in the serverless bundle (ENOENT).
+  outputFileTracingIncludes: {
+    '/digest': ['./content/digest/**'],
+    '/digest/archive': ['./content/digest/**'],
+    '/digest/[date]': ['./content/digest/**'],
+    '/sitemap.xml': ['./content/digest/**'],
+  },
   // Allow the dev server's client runtime (HMR, React Refresh) to load when the
   // app is opened from a phone on the LAN. Without this, Next.js blocks those
   // dev resources cross-origin and the page renders but never hydrates — no data

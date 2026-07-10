@@ -256,12 +256,20 @@ export const articlesRouter = router({
         dateFilter = sql`AND first_published_at >= ${start.toISOString()} AND first_published_at <= ${end.toISOString()}`
       }
 
+      // Paper-only clusters sort AFTER news clusters (not just below in the UI):
+      // the nightly arXiv dump lands ~150 authority-5 papers that outscore
+      // overnight single-outlet stories, and with a flat score ordering they
+      // exhausted the fetch limit, leaving "Today" showing 1 story + a paper
+      // shelf until news outscored them later in the day (2026-07-10).
       const clusters = await sql<Cluster[]>`
         SELECT * FROM clusters
         WHERE 1=1
         ${categoryFilter}
         ${dateFilter}
-        ORDER BY significance_score DESC
+        ORDER BY
+          (SELECT COALESCE(bool_and(a.source_name LIKE 'arXiv%'), false)
+           FROM articles a WHERE a.cluster_id = clusters.id) ASC,
+          significance_score DESC
         LIMIT ${input.limit}
       `
 

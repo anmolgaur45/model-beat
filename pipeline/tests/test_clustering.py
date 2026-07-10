@@ -219,8 +219,8 @@ def test_adjudicate_empty_returns_empty():
     assert _adjudicate_same_event([]) == []
 
 
-def test_adjudicate_fails_closed_without_key(monkeypatch):
-    from ainews.processing import clustering
+def test_adjudicate_fails_closed_when_unconfigured(monkeypatch):
+    from ainews.processing import llm
 
-    monkeypatch.setattr(clustering.settings, "anthropic_api_key", "")
+    monkeypatch.setattr(llm.settings, "vertex_project", "")
     assert _adjudicate_same_event([("a", "b"), ("c", "d")]) == [False, False]

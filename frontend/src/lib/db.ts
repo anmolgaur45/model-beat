@@ -16,10 +16,11 @@ const sql = postgres({
   // instances, each with its OWN pool, so total connections ≈ max × busy
   // instances — that product must stay under ~47 or Postgres refuses new
   // connections. A Vercel function serves one request at a time and a single
-  // request issues at most ~3 parallel queries, so a small pool is plenty;
-  // keeping max low lets ~9 instances run concurrently before exhaustion
-  // (vs ~4–5 at max:10). Drop to 3 if connection pressure ever appears.
-  max: 5,
+  // request issues at most ~3 parallel queries, so a small pool is plenty.
+  // Dropped 5 → 3 on 2026-07-11: a crawler burst on the dynamic story pages
+  // fanned out enough instances to exhaust the slots and the pipeline's
+  // connect was refused mid-spike (~14 concurrent instances now fit).
+  max: 3,
   idle_timeout: 20, // release idle conns quickly between invocations
   max_lifetime: 60 * 30, // recycle a connection every ~30 min
   connect_timeout: 10,

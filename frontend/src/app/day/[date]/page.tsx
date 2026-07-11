@@ -1,6 +1,6 @@
 import { cache } from 'react'
 import type { Metadata } from 'next'
-import { SITE_URL } from '@/lib/site'
+import { AUTHOR_JSONLD, SITE_URL } from '@/lib/site'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { appRouter } from '@/server/routers/_app'
@@ -18,6 +18,18 @@ import { PapersFold } from '@/components/PapersFold'
 const TOP_STORY_MIN = 6
 
 export const revalidate = 3600
+
+// Registers the route for ISR (see models/[slug] — same private/no-store bug).
+// Prerender the recent, substantive days; the long tail builds on demand and
+// caches for the revalidate window.
+export async function generateStaticParams() {
+  const rows = await sql<{ day: string }[]>`
+    SELECT DISTINCT to_char(first_published_at AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS day
+    FROM clusters
+    WHERE first_published_at >= now() - interval '14 days'
+  `
+  return rows.map((r) => ({ date: r.day }))
+}
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 const SITE = SITE_URL
@@ -169,6 +181,11 @@ export default async function DayPage({
           '@type': 'NewsArticle',
           headline: c.headline,
           datePublished: c.first_published_at,
+          // Newest covering article = when the aggregated story last changed.
+          dateModified: (c.articles ?? [])
+            .map((a) => a.published_at)
+            .reduce((x, y) => (x > y ? x : y), c.first_published_at),
+          author: AUTHOR_JSONLD,
           description: bestText(c).slice(0, 250),
           // Our permalink (schema + all sources), not the external publisher.
           url: `${SITE}${storyPath(c)}`,

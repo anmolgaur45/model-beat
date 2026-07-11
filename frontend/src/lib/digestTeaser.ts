@@ -92,10 +92,19 @@ export function composeRows(
   const moves = events.filter((e) => e.event_type !== 'catalog')
 
   // Real movement first (already ranked by the caller): price, benchmark,
-  // context. Reserve one slot for a story when stories exist.
+  // context. Reserve one slot for a story when stories exist. One row per
+  // model: sync_pricing emits separate input/output (and vendor/floor) events
+  // for what a reader sees as one repricing, so the best-ranked event speaks
+  // for the model and the rest are the same news twice (Anmol caught two Kimi
+  // K2.5 floor rows side by side, 2026-07-11).
   const eventCap = stories.length > 0 ? max - 1 : max
+  const seenModels = new Set<string>()
   for (const e of moves) {
     if (rows.length >= eventCap) break
+    if (e.model_slug) {
+      if (seenModels.has(e.model_slug)) continue
+      seenModels.add(e.model_slug)
+    }
     rows.push({
       key: e.id,
       kind: 'event',
@@ -106,8 +115,11 @@ export function composeRows(
     })
   }
 
-  // The registry fact slots in after real movement, before catalog filler.
-  if (fact && rows.length < eventCap) rows.push(fact)
+  // The registry fact slots in after real movement, before catalog filler —
+  // unless a movement row already told this model's price story.
+  if (fact && rows.length < eventCap && !(fact.href && seenModels.has(fact.href.replace('/models/', '')))) {
+    rows.push(fact)
+  }
 
   // Catalog: one collapsed line for the biggest vendor group, never a list of
   // near-identical "X added to the tracker" rows.

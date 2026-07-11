@@ -9,8 +9,19 @@ import { ModelTelemetry, type ModelView, type BenchRowView, type IndexGauge } fr
 import { BUCKETS } from '@/lib/modelBuckets'
 import { benchmarkMeta, GROUP_ORDER, GROUP_LABELS } from '@/lib/benchmarks'
 import { flagshipModels, pairKey } from '@/lib/comparePairs'
+import sql from '@/lib/db'
 
 export const revalidate = 3600
+
+// Registers the route for ISR. Without generateStaticParams Next served these
+// pages fully dynamic (private, no-store) despite the revalidate export, so
+// every visit and crawl re-rendered and re-queried the DB (2026-07-11 audit;
+// same render path as the connection-slot incident). New models not in this
+// list still resolve on demand (dynamicParams default) and cache after.
+export async function generateStaticParams() {
+  const rows = await sql<{ slug: string }[]>`SELECT slug FROM models`
+  return rows.map((r) => ({ slug: r.slug }))
+}
 
 const SLUG_RE = /^[a-z0-9-]+$/
 const SITE = SITE_URL
@@ -63,6 +74,38 @@ function synopsis(m: Model): string {
   if (m.vendor) parts.push(`from ${m.vendor}`)
   if (m.released_at) parts.push(`released ${fmtReleased(m.released_at)}`)
   return `${m.name} is ${parts.join(', ')}.`
+}
+// GEO answer block: a self-contained 40-60 word definition directly under the
+// H1, built only from registry facts (missing facts drop their clause), so an
+// answer engine can lift one attributed passage instead of parsing the tables.
+function answerLine(m: Model, bestAt: { label: string; pct: number }[]): string {
+  const access = m.is_open_weight === true ? 'open-weights ' : m.is_open_weight === false ? 'proprietary ' : ''
+  // vendorless article must agree with the adjective ("a proprietary", "an open-weights")
+  const article = access.startsWith('p') ? 'a' : 'an'
+  const who = m.vendor ? `${m.vendor}’s ${access}AI model` : `${article} ${access}AI model`
+  const when = m.released_at ? `, released ${fmtReleased(m.released_at)}` : ''
+  const facts: string[] = []
+  if (m.headline_score != null) facts.push(`scores ${Math.round(m.headline_score)} on the Epoch Capabilities Index`)
+  const pin = m.vendor_price_in ?? m.price_in
+  const pout = m.vendor_price_out ?? m.price_out
+  if (pin != null && pout != null) facts.push(`costs ${usd(pin)}/M input and ${usd(pout)}/M output tokens`)
+  if (m.context_window) facts.push(`handles a ${fmtContext(m.context_window)}-token context window`)
+  const factSentence = facts.length
+    ? ` It ${facts.length > 1 ? `${facts.slice(0, -1).join(', ')}, and ${facts[facts.length - 1]}` : facts[0]}.`
+    : ''
+  // bestAt is the model's OWN top bucket, not a global #1 — the sentence must
+  // say "its strongest use case" with the percentile, never "ranks strongest
+  // among tracked models" (many models share a top bucket; Anmol caught two
+  // "strongest for coding" claims side by side on 2026-07-11).
+  const strength = bestAt[0]
+    ? ` Its strongest use case is ${bestAt[0].label.toLowerCase()}, where it ranks in the ${ordinalPct(bestAt[0].pct)} percentile of the models Model Beat tracks.`
+    : ''
+  return `${m.name} is ${who}${when}.${factSentence}${strength}`
+}
+function ordinalPct(n: number): string {
+  const v = n % 100
+  const s = v >= 11 && v <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] ?? 'th'
+  return `${n}${s}`
 }
 function parseMods(s: string | null): string[] {
   if (!s) return []
@@ -223,7 +266,11 @@ function toView(model: ModelDetail): ModelView {
     monogram: (model.vendor ?? model.name).trim().charAt(0).toUpperCase(),
     slugDisplay: model.openrouter_id ?? model.slug,
     modelSlug: model.slug,
-    description: model.description ?? synopsis(model),
+    // The answer block now carries the who/when facts; the description keeps
+    // Epoch's editorial text and stays empty (not the synopsis fallback) when
+    // Epoch has none, so the two paragraphs never read as duplicates.
+    answer: answerLine(model, bestAt),
+    description: model.description ?? '',
     modalities: { in: parseMods(model.input_modalities), out: parseMods(model.output_modalities) },
     // Phase U: the headline price is the vendor list price when we have it;
     // the credible OpenRouter floor gets its own labeled cell when cheaper.

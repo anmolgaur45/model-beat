@@ -68,6 +68,31 @@ describe('composeRows', () => {
     { id: 's3', headline: 'Third story' },
   ]
 
+  it('one movement row per model: input+output floor drops collapse to one (Kimi K2.5)', () => {
+    // sync_pricing emits one event per price direction for a single repricing
+    const events = [
+      ev({ id: 'k-in', event_type: 'price', price_scope: 'floor', model_slug: 'kimi-k2-5', summary: 'Kimi K2.5: cheapest credible provider via DigitalOcean now $0.375 per 1M input tokens', delta: '-31%', tone: 'good' }),
+      ev({ id: 'k-out', event_type: 'price', price_scope: 'floor', model_slug: 'kimi-k2-5', summary: 'Kimi K2.5: cheapest credible provider via DigitalOcean now $2.025 per 1M output tokens', delta: '-25%', tone: 'good' }),
+      ev({ id: 'q1', event_type: 'price', price_scope: 'floor', model_slug: 'qwen3-5-27b', summary: 'Qwen3.5-27B: cheapest credible provider now $2 per 1M output tokens', delta: '-23%', tone: 'good' }),
+    ]
+    const rows = composeRows(events, stories, null, 3)
+    const kimiRows = rows.filter((r) => r.href === '/models/kimi-k2-5')
+    expect(kimiRows).toHaveLength(1)
+    expect(kimiRows[0].key).toBe('k-in') // best-ranked (first) event speaks for the model
+    expect(rows.some((r) => r.href === '/models/qwen3-5-27b')).toBe(true)
+  })
+
+  it('skips the floor fact when a movement row already covers that model', () => {
+    const events = [
+      ev({ id: 'g1', event_type: 'price', price_scope: 'floor', model_slug: 'glm-5-2', summary: 'GLM-5.2: cheapest credible provider now $0.35 per 1M input tokens', delta: '-30%', tone: 'good' }),
+    ]
+    const fact = floorFactRow({ slug: 'glm-5-2', name: 'GLM-5.2', price_in: 0.35, vendor_price_in: 0.9, floor_provider: 'DeepInfra' })
+    expect(fact).not.toBeNull()
+    const rows = composeRows(events, [], fact, 3)
+    expect(rows.filter((r) => r.href === '/models/glm-5-2')).toHaveLength(1)
+    expect(rows[0].key).toBe('g1')
+  })
+
   it('collapses a same-vendor catalog burst into one grouped line', () => {
     const events = [
       ev({ id: 'c1', event_type: 'catalog', price_scope: null, summary: 'GPT-5.6 Sol (OpenAI) added to the tracker.' }),

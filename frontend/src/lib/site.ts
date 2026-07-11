@@ -11,3 +11,12 @@ const FALLBACK =
     : 'http://localhost:3000'
 
 export const SITE_URL = (process.env.NEXT_PUBLIC_URL || FALLBACK).replace(/\/+$/, '')
+
+// Shared JSON-LD author entity. The @id anchors to the Person on /about (which
+// carries the full sameAs profile links), so every NewsArticle byline across
+// the site resolves to one credentialed entity instead of anonymous authorship.
+export const AUTHOR_JSONLD = {
+  '@type': 'Person',
+  '@id': `${SITE_URL}/about#anmol-gaur`,
+  name: 'Anmol Gaur',
+} as const

@@ -18,6 +18,15 @@ import { timeAgo } from '@/lib/timeFormat'
 
 export const revalidate = 3600
 
+// Registers the route for ISR without prerendering ~3k stories at build time:
+// each page builds on first request and then caches for the revalidate window.
+// Before this, the route was fully dynamic (private, no-store) and crawler
+// bursts re-rendered every hit — the load behind the 2026-07-11 Cloud SQL
+// connection-slot incident.
+export function generateStaticParams(): { id: string; slug?: string[] }[] {
+  return []
+}
+
 const SITE = SITE_URL
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 

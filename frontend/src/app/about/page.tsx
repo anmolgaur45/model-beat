@@ -31,6 +31,8 @@ const JSONLD = {
     url: SITE,
     founder: {
       '@type': 'Person',
+      // Stable entity id referenced by NewsArticle author fields site-wide.
+      '@id': `${SITE}/about#anmol-gaur`,
       name: 'Anmol Gaur',
       sameAs: ['https://github.com/anmolgaur45', 'https://www.linkedin.com/in/anmolgaur45/', 'https://x.com/0xanmolgaur'],
     },

@@ -1280,7 +1280,10 @@ a.anc-tick:hover { color: var(--accent-text); }
 .m2-copy { width: 26px; height: 26px; border-radius: 7px; border: 1px solid var(--line); background: var(--bg-pill); color: var(--text2); display: grid; place-items: center; }
 .m2-copy:hover { color: var(--text); border-color: var(--line2); }
 .m2-copy.copied { color: var(--accent-text); border-color: var(--accent-line); }
-.m2-desc { margin: 18px 0 0; color: var(--text2); font-size: 14.5px; line-height: 1.65; max-width: 620px; }
+/* Self-contained model definition under the H1 — always visible, never clamped;
+   slightly brighter than the Epoch description that follows. */
+.m2-answer { margin: 18px 0 0; color: var(--text); font-size: 14.5px; line-height: 1.65; max-width: 620px; }
+.m2-desc { margin: 10px 0 0; color: var(--text2); font-size: 14.5px; line-height: 1.65; max-width: 620px; }
 .m2-desc.clamped { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .m2-showmore { margin-top: 9px; display: inline-flex; align-items: center; gap: 6px; background: none; border: 0; color: var(--accent-text); font-size: 13px; font-weight: 550; padding: 0; white-space: nowrap; }
 .m2-showmore svg { transition: transform 0.2s; }

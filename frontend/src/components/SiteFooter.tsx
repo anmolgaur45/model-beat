@@ -21,7 +21,6 @@ export function SiteFooter() {
           <Link href="/digest">Digest</Link>
           <Link href="/about">About</Link>
           <Link href="/methodology">Methodology</Link>
-          <Link href="/privacy">Privacy Policy</Link>
         </nav>
 
         <nav className="anc-footer-col" aria-label="Model rankings">
@@ -40,7 +39,10 @@ export function SiteFooter() {
           <DigestForm source="digest-footer" compact />
         </div>
       </div>
-      <div className="anc-footer-base">© {new Date().getUTCFullYear()} Model Beat</div>
+      <div className="anc-footer-base">
+        © {new Date().getUTCFullYear()} Model Beat · <Link href="/terms">Terms</Link> ·{' '}
+        <Link href="/privacy">Privacy</Link> · <Link href="/contact">Contact</Link>
+      </div>
     </footer>
   )
 }

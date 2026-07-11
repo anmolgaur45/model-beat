@@ -35,7 +35,8 @@ export interface ModelView {
   monogram: string
   slugDisplay: string // org/name id shown + copied
   modelSlug: string // our routing slug, for the compare link
-  description: string
+  answer: string // self-contained one-liner (maker, ECI, price, context) under the H1
+  description: string // Epoch's editorial text; may be empty
   modalities: { in: string[]; out: string[] }
   priceIn: string
   priceOut: string
@@ -209,7 +210,10 @@ export function ModelTelemetry({ view: M }: { view: ModelView }) {
                 )}
               </button>
             </div>
-            <p className={'m2-desc' + (longDesc && !expanded ? ' clamped' : '')}>{M.description}</p>
+            <p className="m2-answer">{M.answer}</p>
+            {M.description && (
+              <p className={'m2-desc' + (longDesc && !expanded ? ' clamped' : '')}>{M.description}</p>
+            )}
             {longDesc && (
               <button className={'m2-showmore' + (expanded ? ' open' : '')} onClick={() => setExpanded(!expanded)}>
                 {expanded ? 'Show less' : 'Show more'}

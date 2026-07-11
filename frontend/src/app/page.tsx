@@ -2,10 +2,10 @@ import { cache } from 'react'
 import type { Metadata } from 'next'
 import { appRouter } from '@/server/routers/_app'
 import { createContext } from '@/server/trpc'
-import type { Cluster, Model } from '@/types/article'
+import type { Model } from '@/types/article'
 import type { TopModel } from '@/components/HeroModelBand'
 import { isModelAvailable } from '@/lib/modelStatus'
-import { SITE_URL } from '@/lib/site'
+import { AUTHOR_JSONLD, SITE_URL } from '@/lib/site'
 import { storyPath } from '@/lib/story'
 import { isPaperCluster } from '@/lib/papers'
 import HomePageClient from './HomePageClient'
@@ -45,20 +45,18 @@ const loadHome = cache(async () => {
   return { date, clusters, topStories, topModels }
 })
 
-export async function generateMetadata(): Promise<Metadata> {
-  const { clusters } = await loadHome().catch(() => ({ clusters: [] as Cluster[] }))
-  // Editorial stories lead the description; shelved paper clusters only when
-  // that's all the day has (same rule as the day pages).
-  const eds = clusters.filter((c) => !isPaperCluster(c))
-  const top = (eds.length > 0 ? eds : clusters).slice(0, 3).map((c) => c.headline).join(' · ')
-  const description = top
-    ? `Today's top AI news: ${top}`.slice(0, 155)
-    : 'Daily AI news, deduplicated across sources and ranked by significance, plus a model tracker with benchmarks and pricing.'
+export function generateMetadata(): Metadata {
   return {
     // absolute bypasses the "%s | Model Beat" template so the brand isn't doubled
     title: { absolute: 'Model Beat — Daily AI News & Model Tracker' },
-    description,
-    // page alternates override the layout's, so re-declare the RSS feed here to
+    // Hand-written and stable: the previous auto-concatenated headlines
+    // truncated mid-word in SERPs and read as noise (2026-07-11 audit).
+    description:
+      'Stories from 1,300+ outlets, deduplicated and ranked by significance, plus a live tracker of 140+ AI models with benchmarks and pricing.',
+    // Canonical renders without a trailing slash: Next's metadata resolver
+    // normalizes it away even when passed explicitly. Audit-confirmed
+    // negligible (Google normalizes the pair), so accepted as-is.
+    // Page alternates override the layout's, so re-declare the RSS feed here to
     // keep feed-reader auto-discovery in <head> (the visible footer link is gone)
     alternates: { canonical: '/', types: { 'application/rss+xml': '/feed.xml' } },
   }
@@ -67,7 +65,18 @@ export async function generateMetadata(): Promise<Metadata> {
 // Ranked-list schema for the homepage: "today's top N" is exactly the shape
 // answer engines quote for fresh queries. Editorial stories only (papers are
 // shelved in the UI); the week list mirrors the top-stories ticker.
-type RankedStory = { id: string; headline: string; first_published_at: string }
+type RankedStory = {
+  id: string
+  headline: string
+  first_published_at: string
+  articles?: { published_at: string }[]
+}
+// A story's "modified" moment is its newest covering article — coverage
+// growing is what updates an aggregated story (clusters have no updated_at).
+function lastUpdated(c: RankedStory): string {
+  const times = (c.articles ?? []).map((a) => a.published_at).filter(Boolean)
+  return times.length ? times.reduce((a, b) => (a > b ? a : b)) : c.first_published_at
+}
 function rankedListJsonLd(name: string, stories: RankedStory[]) {
   if (stories.length === 0) return null
   return {
@@ -81,6 +90,8 @@ function rankedListJsonLd(name: string, stories: RankedStory[]) {
         '@type': 'NewsArticle',
         headline: c.headline,
         datePublished: c.first_published_at,
+        dateModified: lastUpdated(c),
+        author: AUTHOR_JSONLD,
         url: `${SITE_URL}${storyPath(c)}`,
         publisher: { '@type': 'NewsMediaOrganization', name: 'Model Beat' },
       },

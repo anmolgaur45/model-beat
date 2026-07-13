@@ -17,7 +17,9 @@ import { PapersFold } from '@/components/PapersFold'
 // Match the homepage's top-story gate: only a high-signal lead gets the hero card.
 const TOP_STORY_MIN = 6
 
-export const revalidate = 3600
+// 24h: past days never change; today's and yesterday's pages are purged by
+// /api/revalidate after each pipeline run (ISR-write budget, 2026-07-12).
+export const revalidate = 86400
 
 // Registers the route for ISR (see models/[slug] — same private/no-store bug).
 // Prerender the recent, substantive days; the long tail builds on demand and

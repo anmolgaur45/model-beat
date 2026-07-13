@@ -16,7 +16,11 @@ import { CATEGORY_LABELS } from '@/components/categoryMeta'
 import { storyPath } from '@/lib/story'
 import { timeAgo } from '@/lib/timeFormat'
 
-export const revalidate = 3600
+// 7 days: a story's coverage only accretes in its first ~48h, and the
+// pipeline's /api/revalidate purges exactly the stories that changed each
+// run. A short TTL here let the story-page crawler force a re-render+ISR
+// write per page per hour (the 2026-07-12 Vercel ISR-writes limit email).
+export const revalidate = 604800
 
 // Registers the route for ISR without prerendering ~3k stories at build time:
 // each page builds on first request and then caches for the revalidate window.

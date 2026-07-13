@@ -10,7 +10,9 @@ import { CompareTable } from '@/components/CompareTable'
 import { NavBar } from '@/components/NavBar'
 import { comparePairs, comparePairKeys, pairKey, pairModelNames } from '@/lib/comparePairs'
 
-export const revalidate = 3600
+// 24h: pair pages move on benchmark/price syncs, which are debounced and
+// rare; day-old numbers are acceptable here (ISR-write budget, 2026-07-12).
+export const revalidate = 86400
 
 const SITE = SITE_URL
 const SLUG_RE = /^[a-z0-9-]+$/

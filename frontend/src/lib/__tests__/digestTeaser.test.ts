@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { composeRows, eventDelta, eventRank, floorFactRow } from '../digestTeaser'
+import { composeRows, eventDelta, eventRank, floorFactRow, isMaterialMove } from '../digestTeaser'
 import type { DigestTeaserEvent } from '@/types/article'
 
 function ev(over: Partial<DigestTeaserEvent>): DigestTeaserEvent {
@@ -61,6 +61,27 @@ describe('eventDelta', () => {
   })
 })
 
+describe('isMaterialMove', () => {
+  it('drops small floor churn, keeps big floor moves', () => {
+    expect(isMaterialMove('price', 'floor', '0.55', '0.6')).toBe(false) // GLM-4.6 +9%
+    expect(isMaterialMove('price', 'floor', '0.54', '0.375')).toBe(true) // Kimi -31%
+    expect(isMaterialMove('price', 'floor', '2.6', '2')).toBe(true) // Qwen -23%
+  })
+
+  it('exempts vendor price, benchmark, and context events at any size', () => {
+    expect(isMaterialMove('price', 'vendor', '0.84', '0.9')).toBe(true) // +7%
+    expect(isMaterialMove('benchmark', null, '58.7', '55.1')).toBe(true)
+    expect(isMaterialMove('context', null, '202752', '200000')).toBe(true)
+    expect(isMaterialMove('catalog', null, null, null)).toBe(true)
+  })
+
+  it('drops floor events whose values cannot prove materiality', () => {
+    expect(isMaterialMove('price', 'floor', null, '2')).toBe(false)
+    expect(isMaterialMove('price', 'floor', '0', '2')).toBe(false)
+    expect(isMaterialMove('price', 'floor', 'abc', '2')).toBe(false)
+  })
+})
+
 describe('composeRows', () => {
   const stories = [
     { id: 's1', headline: 'UST is bringing Claude to physical AI' },
@@ -80,6 +101,25 @@ describe('composeRows', () => {
     expect(kimiRows).toHaveLength(1)
     expect(kimiRows[0].key).toBe('k-in') // best-ranked (first) event speaks for the model
     expect(rows.some((r) => r.href === '/models/qwen3-5-27b')).toBe(true)
+  })
+
+  it('prefers a different event type for the second movement row', () => {
+    const events = [
+      ev({ id: 'p1', event_type: 'price', price_scope: 'floor', model_slug: 'kimi-k2-5', summary: 'Kimi K2.5: floor drop', delta: '-31%', tone: 'good' }),
+      ev({ id: 'p2', event_type: 'price', price_scope: 'floor', model_slug: 'qwen3-5-27b', summary: 'Qwen3.5: floor drop', delta: '-23%', tone: 'good' }),
+      ev({ id: 'b1', event_type: 'benchmark', price_scope: null, model_slug: 'glm-5-1', summary: 'GLM-5.1: SimpleBench dropped', delta: '-6%', tone: 'bad' }),
+    ]
+    const rows = composeRows(events, [], null, 3)
+    expect(rows.map((r) => r.key)).toEqual(['p1', 'b1', 'p2'])
+  })
+
+  it('falls back to same-type rows when nothing else moved', () => {
+    const events = [
+      ev({ id: 'p1', event_type: 'price', price_scope: 'floor', model_slug: 'a1', summary: 'A: drop', delta: '-31%', tone: 'good' }),
+      ev({ id: 'p2', event_type: 'price', price_scope: 'floor', model_slug: 'b2', summary: 'B: drop', delta: '-23%', tone: 'good' }),
+    ]
+    const rows = composeRows(events, [], null, 3)
+    expect(rows.map((r) => r.key)).toEqual(['p1', 'p2'])
   })
 
   it('skips the floor fact when a movement row already covers that model', () => {

@@ -42,6 +42,26 @@ export function eventDelta(
   return { delta, tone: 'neutral' }
 }
 
+// Floor prices are third-party marketplaces doing what marketplaces do, so
+// only moves a builder would repeat to a colleague earn a card row (Kimi -31%
+// yes, GLM-4.6 +9% no). Vendor list price, benchmark, and context events are
+// exempt: rare and deliberate means news at any size. A floor event whose
+// values can't prove materiality is dropped. (Locked rules, 2026-07-13.)
+export const FLOOR_MATERIALITY_MIN_PCT = 15
+
+export function isMaterialMove(
+  eventType: string,
+  priceScope: string | null,
+  oldValue: string | null,
+  newValue: string | null,
+): boolean {
+  if (eventType !== 'price' || priceScope !== 'floor') return true
+  const o = oldValue == null ? NaN : Number(oldValue)
+  const n = newValue == null ? NaN : Number(newValue)
+  if (!Number.isFinite(o) || !Number.isFinite(n) || o <= 0) return false
+  return Math.abs(((n - o) / o) * 100) >= FLOOR_MATERIALITY_MIN_PCT
+}
+
 // "GPT-5.6 Sol (OpenAI) added to the tracker." — the vendor paren is dead
 // weight on a one-line row.
 export function stripVendorParen(summary: string, vendor: string | null | undefined): string {
@@ -99,19 +119,26 @@ export function composeRows(
   // K2.5 floor rows side by side, 2026-07-11).
   const eventCap = stories.length > 0 ? max - 1 : max
   const seenModels = new Set<string>()
-  for (const e of moves) {
-    if (rows.length >= eventCap) break
-    if (e.model_slug) {
-      if (seenModels.has(e.model_slug)) continue
-      seenModels.add(e.model_slug)
-    }
+  // Type-variety preference (2026-07-13 amendment): after the top-ranked row,
+  // prefer an event of a type not yet shown (price + benchmark reads richer
+  // than price + price). Preference, not rule — same-type rows remain when
+  // that's all that moved. Rank order still decides within each choice.
+  const usedTypes = new Set<string>()
+  const remaining = [...moves]
+  while (rows.length < eventCap && remaining.length > 0) {
+    const eligible = remaining.filter((e) => !(e.model_slug && seenModels.has(e.model_slug)))
+    if (eligible.length === 0) break
+    const pick = eligible.find((e) => !usedTypes.has(e.event_type)) ?? eligible[0]
+    remaining.splice(remaining.indexOf(pick), 1)
+    if (pick.model_slug) seenModels.add(pick.model_slug)
+    usedTypes.add(pick.event_type)
     rows.push({
-      key: e.id,
+      key: pick.id,
       kind: 'event',
-      text: stripVendorParen(e.summary, e.model_vendor),
-      chip: e.delta,
-      tone: e.tone,
-      href: e.model_slug ? `/models/${e.model_slug}` : undefined,
+      text: stripVendorParen(pick.summary, pick.model_vendor),
+      chip: pick.delta,
+      tone: pick.tone,
+      href: pick.model_slug ? `/models/${pick.model_slug}` : undefined,
     })
   }
 

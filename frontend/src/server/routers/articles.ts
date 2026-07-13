@@ -4,7 +4,7 @@ import { router, publicProcedure } from '../trpc'
 import sql from '@/lib/db'
 import type { Article, Cluster, DigestTeaser, Model, ModelBenchmark, ModelEvent } from '@/types/article'
 import { BUCKETS } from '@/lib/modelBuckets'
-import { composeRows, eventDelta, eventRank, floorFactRow, type FloorFact } from '@/lib/digestTeaser'
+import { composeRows, eventDelta, eventRank, floorFactRow, isMaterialMove, type FloorFact } from '@/lib/digestTeaser'
 
 const CATEGORY_VALUES = [
   'model-releases', 'research-papers', 'company-news', 'product-launches',
@@ -723,7 +723,13 @@ export const articlesRouter = router({
       sql<{ id: string; headline: string }[]>`
         SELECT id, headline FROM clusters
         WHERE first_published_at >= now() - interval '7 days'
-        ORDER BY significance_score DESC, first_published_at DESC
+        -- Recency-decayed significance (halved every ~2 days of age): raw
+        -- significance let a 42-source story own "this week" for its full 7
+        -- days (Mistral robotics, caught on day 5). Soft decay keeps old
+        -- stories eligible when nothing fresh exists, so quiet weeks and the
+        -- Thursday post-send window never go empty.
+        ORDER BY significance_score / (1 + EXTRACT(EPOCH FROM (now() - first_published_at)) / 172800.0) DESC,
+                 first_published_at DESC
         LIMIT 3
       `,
       // The registry's insider hook: the endpoint-synced model with the
@@ -747,6 +753,9 @@ export const articlesRouter = router({
       `,
     ])
     const events = eventRows
+      // Third-party floor churn below the materiality bar never reaches the
+      // card (locked rules amendment 2026-07-13).
+      .filter((e) => isMaterialMove(e.event_type, e.price_scope, e.old_value, e.new_value))
       .sort(
         (a, b) =>
           eventRank(a.event_type, a.price_scope) - eventRank(b.event_type, b.price_scope) ||

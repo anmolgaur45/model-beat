@@ -129,3 +129,17 @@ ALTER TABLE models ADD COLUMN IF NOT EXISTS floor_context       INT;
 ALTER TABLE models ADD COLUMN IF NOT EXISTS endpoints_synced_at TIMESTAMPTZ;
 ALTER TABLE models ADD COLUMN IF NOT EXISTS pending_prices      JSONB;
 ALTER TABLE model_events ADD COLUMN IF NOT EXISTS price_scope TEXT;
+
+-- Speed history (2026-07-14): median throughput + TTFT per model from the
+-- Artificial Analysis payload sync_aa_benchmarks already fetches, appended at
+-- most once per ~day per model. Answers "did speed shift alongside the price
+-- change" once history accrues (capacity signal vs margin adjustment).
+CREATE TABLE IF NOT EXISTS model_speed_history (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  model_id          UUID NOT NULL REFERENCES models(id) ON DELETE CASCADE,
+  tokens_per_second FLOAT,
+  ttft_seconds      FLOAT,
+  captured_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_speed_history_model_time
+  ON model_speed_history (model_id, captured_at DESC);

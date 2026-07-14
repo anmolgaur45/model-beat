@@ -23,6 +23,7 @@ from ainews.processing.model_registry import (
     split_or_name,
     openrouter_new_model_rows,
     parse_aa_models,
+    parse_aa_speed,
     aa_base_key,
     provider_matches_author,
     parse_endpoints,
@@ -456,6 +457,36 @@ def test_parse_aa_models_ignores_null_scores():
     cat = parse_aa_models(data)
     scores = cat[normalize_key("M")]
     assert "GPQA Diamond" not in scores and scores["Humanity's Last Exam"] == (0.4, "%")
+
+
+def test_parse_aa_speed_follows_strongest_variant():
+    data = [
+        {"name": "GPT-5.5 (low)", "median_output_tokens_per_second": 120.0,
+         "median_time_to_first_token_seconds": 0.8,
+         "evaluations": {"artificial_analysis_intelligence_index": 40}},
+        {"name": "GPT-5.5 (high)", "median_output_tokens_per_second": 74.1,
+         "median_time_to_first_token_seconds": 2.38,
+         "evaluations": {"artificial_analysis_intelligence_index": 53}},
+    ]
+    speed = parse_aa_speed(data)
+    # the representative is the strongest variant, so its speed is recorded
+    assert speed[normalize_key("GPT-5.5")] == (74.1, 2.38)
+
+
+def test_parse_aa_speed_drops_key_when_strongest_variant_lacks_speed():
+    data = [
+        {"name": "M (low)", "median_output_tokens_per_second": 200.0,
+         "evaluations": {"artificial_analysis_intelligence_index": 30}},
+        {"name": "M (high)", "evaluations": {"artificial_analysis_intelligence_index": 60}},
+    ]
+    # the weaker variant's speed must not masquerade as the representative's
+    assert normalize_key("M") not in parse_aa_speed(data)
+
+
+def test_parse_aa_speed_keeps_partial_metrics():
+    data = [{"name": "M", "median_output_tokens_per_second": 55.5,
+             "evaluations": {}}]
+    assert parse_aa_speed(data)[normalize_key("M")] == (55.5, None)
 
 
 # ── Phase U: per-provider endpoint parsing + debounced vendor/floor events ─────

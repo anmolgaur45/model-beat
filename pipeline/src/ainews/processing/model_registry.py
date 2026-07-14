@@ -716,6 +716,38 @@ def parse_aa_models(data: list[dict]) -> dict[str, dict]:
     return out
 
 
+def parse_aa_speed(data: list[dict]) -> dict[str, tuple[float | None, float | None]]:
+    """AA `/data/llms/models` → {base_key: (median tokens/sec, median TTFT s)}.
+
+    Same strongest-variant collapse as parse_aa_models, so the speed row
+    describes the same representative the benchmark scores do. A strongest
+    variant reporting neither metric removes the key (the representative has
+    no speed data; a weaker variant's numbers would misattribute). Pure and
+    unit-testable.
+    """
+    best_ii: dict[str, float] = {}
+    out: dict[str, tuple[float | None, float | None]] = {}
+    for m in data:
+        key = aa_base_key(m.get("name") or m.get("slug") or "")
+        if not key:
+            continue
+        ev = m.get("evaluations") or {}
+        ii = ev.get("artificial_analysis_intelligence_index")
+        ii = float(ii) if isinstance(ii, (int, float)) else -1.0
+        if key in best_ii and ii <= best_ii[key]:
+            continue
+        best_ii[key] = ii
+        tps = m.get("median_output_tokens_per_second")
+        ttft = m.get("median_time_to_first_token_seconds")
+        tps_f = float(tps) if isinstance(tps, (int, float)) else None
+        ttft_f = float(ttft) if isinstance(ttft, (int, float)) else None
+        if tps_f is None and ttft_f is None:
+            out.pop(key, None)
+            continue
+        out[key] = (tps_f, ttft_f)
+    return out
+
+
 def build_version_alias(raw: bytes) -> dict[str, str]:
     """Map normalized benchmark `Model version` → normalized clean `Model name`.
 
@@ -1302,7 +1334,9 @@ def sync_aa_benchmarks(conn: psycopg.Connection) -> int:
     if raw is None:
         return 0
     try:
-        catalog = parse_aa_models(json.loads(raw).get("data", []))
+        aa_data = json.loads(raw).get("data", [])
+        catalog = parse_aa_models(aa_data)
+        speed = parse_aa_speed(aa_data)
     except Exception as exc:
         log.warning("aa.parse_failed", error=str(exc))
         return 0
@@ -1356,7 +1390,35 @@ def sync_aa_benchmarks(conn: psycopg.Connection) -> int:
                 conn.rollback()
                 log.warning("aa.upsert_failed", error=str(exc))
 
-    log.info("aa.synced", count=count, events=event_count)
+    # Speed history: append the AA medians at most once per ~day per model
+    # (recording started 2026-07-14 so "did speed shift with the price change"
+    # is answerable once history accrues; AA refreshes these roughly daily,
+    # so a tighter cadence would only record duplicates).
+    speed_count = 0
+    for model_id, epoch_key, name in rows:
+        sp = speed.get(normalize_key(epoch_key or name))
+        if not sp:
+            continue
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO model_speed_history (model_id, tokens_per_second, ttft_seconds)
+                    SELECT %(id)s, %(tps)s, %(ttft)s
+                    WHERE NOT EXISTS (
+                        SELECT 1 FROM model_speed_history
+                        WHERE model_id = %(id)s AND captured_at > now() - interval '20 hours'
+                    )
+                    """,
+                    {"id": model_id, "tps": sp[0], "ttft": sp[1]},
+                )
+                speed_count += cur.rowcount
+            conn.commit()
+        except Exception as exc:
+            conn.rollback()
+            log.warning("aa.speed_insert_failed", name=name, error=str(exc))
+
+    log.info("aa.synced", count=count, events=event_count, speed_rows=speed_count)
     return count
 
 

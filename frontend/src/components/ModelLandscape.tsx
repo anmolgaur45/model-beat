@@ -4,27 +4,54 @@
 // running-max envelope — reused across several views by feeding it different
 // X/Y accessors. It also supports a two-series "groups" mode (one envelope per
 // group, e.g. open vs proprietary) and an envelope-off scatter mode (e.g. the
-// capability profile). Hover + label declutter preserved; no entrance animation.
-import { useMemo, useState, type ReactNode } from 'react'
+// hype map). Geometry is parameterized: phones get a compact variant (taller
+// aspect, larger type in viewBox units, fewer ticks/labels) instead of a
+// shrunken desktop chart, every mark is tappable (tap = tooltip, tap away =
+// dismiss), and each SVG chart can expand into a fullscreen overlay.
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { Model } from '@/types/article'
 
 // ── geometry (viewBox units; SVG scales via width:100%) ─────────────────────
-const CH_W = 960, CH_H = 460
-const CH_M = { top: 30, right: 134, bottom: 46, left: 56 }
-const CH_PW = CH_W - CH_M.left - CH_M.right
-const CH_PH = CH_H - CH_M.top - CH_M.bottom
+interface Geom {
+  W: number; H: number
+  M: { top: number; right: number; bottom: number; left: number }
+  PW: number; PH: number
+  maxXTicks: number; yTickN: number
+  labelCap: number // max direct labels on the plot
+  charW: number // approx label glyph width (viewBox units) for declutter
+}
+function makeGeom(compact: boolean): Geom {
+  const g = compact
+    ? { W: 430, H: 440, M: { top: 28, right: 18, bottom: 48, left: 46 }, maxXTicks: 4, yTickN: 4, labelCap: 5, charW: 7.6 }
+    : { W: 960, H: 460, M: { top: 30, right: 134, bottom: 46, left: 56 }, maxXTicks: 7, yTickN: 5, labelCap: 24, charW: 6.5 }
+  return { ...g, PW: g.W - g.M.left - g.M.right, PH: g.H - g.M.top - g.M.bottom }
+}
+
+// Compact below 641px CSS width — matches where the chart's rendered scale
+// would make desktop-geometry text unreadable.
+function useCompact(): boolean {
+  const [compact, setCompact] = useState(false)
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 640px)')
+    const on = () => setCompact(mq.matches)
+    on()
+    mq.addEventListener('change', on)
+    return () => mq.removeEventListener('change', on)
+  }, [])
+  return compact
+}
 
 type Author = { label: string; hue: number; c: number }
 type ChartModel = {
   name: string; slug: string; author: string
   // metric fields; only the ones a given chart needs are finite
   price: number; eci: number; releaseMs: number; release: string
-  value: number; context: number; coding: number; reasoning: number
+  value: number; context: number; coverage: number
   openWeight: boolean | null
 }
 
 interface Axis {
-  type: 'log' | 'time' | 'linear'
+  type: 'log' | 'time' | 'linear' | 'sqrt'
   value: (d: ChartModel) => number
   domain: [number, number]
   ticks: number[]
@@ -41,21 +68,25 @@ interface YAxis {
 type Group = { of: (d: ChartModel) => string; order: string[]; colors: Record<string, { color: string; label: string }> }
 
 // ── scales ──────────────────────────────────────────────────────────────────
-function makeXScale(type: Axis['type'], domain: [number, number]) {
+function makeXScale(type: Axis['type'], domain: [number, number], g: Geom) {
   if (type === 'log') {
     const l0 = Math.log10(domain[0]), l1 = Math.log10(domain[1])
-    return (v: number) => CH_M.left + ((Math.log10(v) - l0) / (l1 - l0)) * CH_PW
+    return (v: number) => g.M.left + ((Math.log10(v) - l0) / (l1 - l0)) * g.PW
+  }
+  if (type === 'sqrt') {
+    const s0 = Math.sqrt(domain[0]), s1 = Math.sqrt(domain[1])
+    return (v: number) => g.M.left + ((Math.sqrt(v) - s0) / (s1 - s0)) * g.PW
   }
   const [t0, t1] = domain
-  return (v: number) => CH_M.left + ((v - t0) / (t1 - t0)) * CH_PW
+  return (v: number) => g.M.left + ((v - t0) / (t1 - t0)) * g.PW
 }
-function makeYScale(domain: [number, number], type: YAxis['type'] = 'linear') {
+function makeYScale(domain: [number, number], g: Geom, type: YAxis['type'] = 'linear') {
   if (type === 'log') {
     const l0 = Math.log10(domain[0]), l1 = Math.log10(domain[1])
-    return (v: number) => CH_M.top + (1 - (Math.log10(v) - l0) / (l1 - l0)) * CH_PH
+    return (v: number) => g.M.top + (1 - (Math.log10(v) - l0) / (l1 - l0)) * g.PH
   }
   const [y0, y1] = domain
-  return (v: number) => CH_M.top + (1 - (v - y0) / (y1 - y0)) * CH_PH
+  return (v: number) => g.M.top + (1 - (v - y0) / (y1 - y0)) * g.PH
 }
 
 // running-max envelope: sorted by x asc, a point joins when its y strictly
@@ -68,21 +99,30 @@ function computeEnvelope(models: ChartModel[], xVal: (d: ChartModel) => number, 
   return env
 }
 
+// evenly-spaced subset that always keeps the first and last element
+function capEvenly<T>(arr: T[], n: number): T[] {
+  if (arr.length <= n) return arr
+  const out: T[] = []
+  for (let i = 0; i < n; i++) out.push(arr[Math.round((i / (n - 1)) * (arr.length - 1))])
+  return [...new Set(out)]
+}
+
 type LabelItem = { text: string; mx: number; my: number }
 type PlacedLabel = LabelItem & { lx: number; ly: number; anchor: 'start' | 'middle' | 'end'; w: number; bx0: number; leader: boolean }
 
 // label declutter: stack colliding labels upward (or below if they hit the top),
 // adding thin leader lines back to the marker.
-function declutter(items: LabelItem[], bottomLimit: number): PlacedLabel[] {
-  const CHAR = 6.5, PAD = 3
+function declutter(items: LabelItem[], g: Geom): PlacedLabel[] {
+  const PAD = 3
+  const bottomLimit = g.M.top + g.PH - 4
   const placed: { x0: number; x1: number; y0: number; y1: number }[] = []
   const out: PlacedLabel[] = []
   const sorted = [...items].sort((a, b) => a.mx - b.mx)
   for (const it of sorted) {
-    const w = it.text.length * CHAR + 4
+    const w = it.text.length * g.charW + 4
     let anchor: 'start' | 'middle' | 'end' = 'middle'
-    if (it.mx > CH_M.left + CH_PW - 64) anchor = 'end'
-    else if (it.mx < CH_M.left + 50) anchor = 'start'
+    if (it.mx > g.M.left + g.PW - 64) anchor = 'end'
+    else if (it.mx < g.M.left + 50) anchor = 'start'
     const x0 = (lx: number) => (anchor === 'middle' ? lx - w / 2 : anchor === 'end' ? lx - w : lx)
     const lx = it.mx
     let ly = it.my - 13
@@ -91,7 +131,7 @@ function declutter(items: LabelItem[], bottomLimit: number): PlacedLabel[] {
       return placed.some((p) => bx0 < p.x1 + PAD && bx1 > p.x0 - PAD && by0 < p.y1 + PAD && by1 > p.y0 - PAD)
     }
     let guard = 0
-    while (hits(ly) && ly > CH_M.top + 6 && guard < 60) { ly -= 5; guard++ }
+    while (hits(ly) && ly > g.M.top + 6 && guard < 60) { ly -= 5; guard++ }
     if (hits(ly)) { // fell off the top — drop below the marker instead
       ly = it.my + 16
       guard = 0
@@ -114,10 +154,15 @@ function envPath(pts: ReadonlyArray<readonly [number, number]>, line: 'linear' |
   return 'M ' + pts.map((p) => `${p[0]} ${p[1]}`).join(' L ')
 }
 
+// evenly thin a tick list down to a maximum count (keeps first + last)
+function thinTicks(ticks: number[], max: number): number[] {
+  return capEvenly(ticks, max)
+}
+
 // ── one chart ───────────────────────────────────────────────────────────────
 function FrontierChart({
-  icon, title, subtitle, models, authors, x, y, line, accentLabel, gradId, onTip, onHideTip,
-  envelope = true, labels = true, diagonal = false, groups,
+  icon, title, subtitle, models, authors, x, y, line, accentLabel, gradId, onTip, onHideTip, geom, onExpand,
+  envelope = true, labels = true, diagonal = false, groups, refX, refY, quadLabels, quadTint, dotColor, legendItems, pickLabels,
 }: {
   icon: ReactNode
   title: string
@@ -131,15 +176,27 @@ function FrontierChart({
   gradId: string
   onTip: (d: ChartModel, onEnv: boolean, cx: number, cy: number) => void
   onHideTip: () => void
+  geom: Geom
+  onExpand?: () => void
   envelope?: boolean
   labels?: boolean
   diagonal?: boolean
   groups?: Group
+  refX?: number // vertical quadrant divider (data units)
+  refY?: number // horizontal quadrant divider (data units)
+  quadLabels?: [string, string, string, string] // TL, TRb, BL, BR corner captions
+  quadTint?: { tl: string; br: string } // faint washes behind the story corners
+  dotColor?: (d: ChartModel) => string | undefined // per-dot story color
+  legendItems?: { color: string; label: string }[] // legend override
+  pickLabels?: (models: ChartModel[]) => ChartModel[] // labels when envelope is off
 }) {
   const [hover, setHover] = useState<string | null>(null)
-  const sx = useMemo(() => makeXScale(x.type, x.domain), [x])
-  const sy = useMemo(() => makeYScale(y.domain, y.type), [y])
+  const g = geom
+  const sx = useMemo(() => makeXScale(x.type, x.domain, g), [x, g])
+  const sy = useMemo(() => makeYScale(y.domain, g, y.type), [y, g])
   const xVal = x.value, yVal = y.value
+  const xTicks = useMemo(() => thinTicks(x.ticks, g.maxXTicks), [x.ticks, g.maxXTicks])
+  const yTicks = useMemo(() => thinTicks(y.ticks, g.yTickN), [y.ticks, g.yTickN])
 
   // one envelope normally; one per group in groups mode
   const envByGroup = useMemo(() => {
@@ -154,15 +211,26 @@ function FrontierChart({
     return [{ key: '_', env: computeEnvelope(models, xVal, yVal), color: 'var(--ch-line)' }]
   }, [models, xVal, yVal, envelope, groups])
 
-  const envSet = useMemo(() => new Set(envByGroup.flatMap((g) => g.env.map((d) => d.name))), [envByGroup])
+  const envSet = useMemo(() => new Set(envByGroup.flatMap((gr) => gr.env.map((d) => d.name))), [envByGroup])
   const byName = useMemo(() => Object.fromEntries(models.map((m) => [m.name, m])), [models])
   const colorOf = (d: ChartModel) => (groups ? groups.colors[groups.of(d)].color : `oklch(0.7 ${authors[d.author].c} ${authors[d.author].hue})`)
 
-  const labelItems = labels ? envByGroup.flatMap((g) => g.env).map((d) => ({ text: d.name, mx: sx(xVal(d)), my: sy(yVal(d)) })) : []
-  const placedLabels = declutter(labelItems, CH_M.top + CH_PH - 4)
+  const labelModels = labels
+    ? envelope
+      ? capEvenly(envByGroup.flatMap((gr) => gr.env), g.labelCap)
+      : capEvenly(pickLabels ? pickLabels(models) : [], g.labelCap)
+    : []
+  const placedLabels = declutter(labelModels.map((d) => ({ text: d.name, mx: sx(xVal(d)), my: sy(yVal(d)) })), g)
 
   const showTip = (d: ChartModel, cx: number, cy: number) => { setHover(d.name); onTip(d, envSet.has(d.name), cx, cy) }
   const hideTip = () => { setHover(null); onHideTip() }
+  // Tap targets: click toggles the tooltip (touch has no hover); clicking the
+  // chart background dismisses it. Mouse users keep plain hover.
+  const tapTip = (d: ChartModel) => (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (hover === d.name) hideTip()
+    else showTip(d, e.clientX, e.clientY)
+  }
 
   return (
     <div className="ch-card">
@@ -173,7 +241,11 @@ function FrontierChart({
           <p>{subtitle}</p>
         </div>
         <div className="ch-legend">
-          {groups ? (
+          {legendItems ? (
+            legendItems.map((li) => (
+              <span className="ch-leg" key={li.label}><span className="dt" style={{ background: li.color }} />{li.label}</span>
+            ))
+          ) : groups ? (
             groups.order.map((k) => (
               <span className="ch-leg" key={k}><span className="ln" style={{ background: groups.colors[k].color }} />{groups.colors[k].label}</span>
             ))
@@ -184,9 +256,20 @@ function FrontierChart({
             </>
           )}
         </div>
+        {onExpand && (
+          <button className="ch-expand" onClick={onExpand} aria-label={`Expand ${title} chart`} title="Expand">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M8.5 2h3.5v3.5M5.5 12H2V8.5M12 2L8 6M2 12l4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          </button>
+        )}
       </div>
 
-      <svg className="ch-svg" viewBox={`0 0 ${CH_W} ${CH_H}`} role="img" aria-label={title}>
+      <svg
+        className={'ch-svg' + (g.W < 600 ? ' is-compact' : '')}
+        viewBox={`0 0 ${g.W} ${g.H}`}
+        role="img"
+        aria-label={title}
+        onClick={hideTip}
+      >
         <defs>
           <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="var(--ch-line)" stopOpacity="0.22" />
@@ -194,25 +277,48 @@ function FrontierChart({
           </linearGradient>
         </defs>
 
-        {y.ticks.map((t) => (
+        {yTicks.map((t) => (
           <g key={'y' + t}>
-            <line className="ch-grid" x1={CH_M.left} y1={sy(t)} x2={CH_M.left + CH_PW} y2={sy(t)} />
-            <text className="ch-axis-text" x={CH_M.left - 12} y={sy(t) + 4} textAnchor="end">{y.format(t)}</text>
+            <line className="ch-grid" x1={g.M.left} y1={sy(t)} x2={g.M.left + g.PW} y2={sy(t)} />
+            <text className="ch-axis-text" x={g.M.left - 12} y={sy(t) + 4} textAnchor="end">{y.format(t)}</text>
           </g>
         ))}
-        {x.ticks.map((t, i) => (
-          <text key={'x' + i} className="ch-axis-text" x={sx(t)} y={CH_M.top + CH_PH + 22} textAnchor="middle">{x.format(t)}</text>
+        {xTicks.map((t, i) => (
+          <text key={'x' + i} className="ch-axis-text" x={sx(t)} y={g.M.top + g.PH + 22} textAnchor="middle">{x.format(t)}</text>
         ))}
-        {x.label && <text className="ch-axis-label" x={CH_M.left + CH_PW / 2} y={CH_H - 4} textAnchor="middle">{x.label}</text>}
+        {x.label && <text className="ch-axis-label" x={g.M.left + g.PW / 2} y={g.H - 4} textAnchor="middle">{x.label}</text>}
 
         {diagonal && (
           <line className="ch-ref" x1={sx(x.domain[0])} y1={sy(y.domain[0])} x2={sx(x.domain[1])} y2={sy(y.domain[1])} />
+        )}
+        {/* faint washes behind the two story corners, under everything else */}
+        {quadTint && refX != null && refY != null && (
+          <>
+            <rect x={g.M.left} y={g.M.top} width={sx(refX) - g.M.left} height={sy(refY) - g.M.top}
+              fill={quadTint.tl} opacity="0.055" />
+            <rect x={sx(refX)} y={sy(refY)} width={g.M.left + g.PW - sx(refX)} height={g.M.top + g.PH - sy(refY)}
+              fill={quadTint.br} opacity="0.055" />
+          </>
+        )}
+        {refX != null && (
+          <line className="ch-div" x1={sx(refX)} y1={g.M.top} x2={sx(refX)} y2={g.M.top + g.PH} />
+        )}
+        {refY != null && (
+          <line className="ch-div" x1={g.M.left} y1={sy(refY)} x2={g.M.left + g.PW} y2={sy(refY)} />
+        )}
+        {quadLabels && (
+          <>
+            <text className="ch-quad" x={g.M.left + 8} y={g.M.top + 14} textAnchor="start">{quadLabels[0]}</text>
+            <text className="ch-quad" x={g.M.left + g.PW - 8} y={g.M.top + 14} textAnchor="end">{quadLabels[1]}</text>
+            <text className="ch-quad" x={g.M.left + 8} y={g.M.top + g.PH - 8} textAnchor="start">{quadLabels[2]}</text>
+            <text className="ch-quad" x={g.M.left + g.PW - 8} y={g.M.top + g.PH - 8} textAnchor="end">{quadLabels[3]}</text>
+          </>
         )}
 
         {/* envelope area only for single-series charts (groups draw lines only) */}
         {!groups && envelope && envByGroup[0]?.env.length > 0 && (() => {
           const pts = envByGroup[0].env.map((d) => [sx(xVal(d)), sy(yVal(d))] as const)
-          const baseY = CH_M.top + CH_PH
+          const baseY = g.M.top + g.PH
           const lp = envPath(pts, line)
           let ap: string
           if (line === 'step') {
@@ -229,21 +335,24 @@ function FrontierChart({
         })()}
 
         {/* group envelope lines (no fill) */}
-        {groups && envByGroup.map((g) => g.env.length > 0 && (
-          <path key={'gl' + g.key} className="ch-line" style={{ stroke: g.color }}
-            d={envPath(g.env.map((d) => [sx(xVal(d)), sy(yVal(d))] as const), line)} />
+        {groups && envByGroup.map((gr) => gr.env.length > 0 && (
+          <path key={'gl' + gr.key} className="ch-line" style={{ stroke: gr.color }}
+            d={envPath(gr.env.map((d) => [sx(xVal(d)), sy(yVal(d))] as const), line)} />
         ))}
 
         {hover && byName[hover] && (
-          <line className="ch-vline" x1={sx(xVal(byName[hover]))} y1={CH_M.top} x2={sx(xVal(byName[hover]))} y2={CH_M.top + CH_PH} />
+          <line className="ch-vline" x1={sx(xVal(byName[hover]))} y1={g.M.top} x2={sx(xVal(byName[hover]))} y2={g.M.top + g.PH} />
         )}
 
-        {models.filter((d) => !envSet.has(d.name)).map((d) => (
-          <circle key={d.name} className={'ch-dot' + (hover && hover !== d.name ? ' dim' : '')}
-            cx={sx(xVal(d))} cy={sy(yVal(d))} r={hover === d.name ? 5 : 3.2}
-            style={hover === d.name || groups ? { fill: colorOf(d) } : undefined} />
-        ))}
-        {envByGroup.flatMap((g) => g.env).map((d) => (
+        {models.filter((d) => !envSet.has(d.name)).map((d) => {
+          const story = dotColor?.(d)
+          return (
+            <circle key={d.name} className={'ch-dot' + (hover && hover !== d.name ? ' dim' : '')}
+              cx={sx(xVal(d))} cy={sy(yVal(d))} r={hover === d.name ? 5 : story ? 3.8 : 3.2}
+              style={story ? { fill: story } : hover === d.name || groups ? { fill: colorOf(d) } : undefined} />
+          )
+        })}
+        {envByGroup.flatMap((gr) => gr.env).map((d) => (
           <circle key={d.name} className={'ch-dot-env' + (hover && hover !== d.name ? ' dim' : '')}
             cx={sx(xVal(d))} cy={sy(yVal(d))} r={hover === d.name ? 6 : 4.5}
             style={groups ? { fill: colorOf(d) } : undefined} />
@@ -263,16 +372,18 @@ function FrontierChart({
               <rect className="ch-lab-hit" x={l.bx0} y={l.ly - 11} width={l.w} height={15}
                 onMouseEnter={(e) => showTip(d, e.clientX, e.clientY)}
                 onMouseMove={(e) => onTip(d, true, e.clientX, e.clientY)}
-                onMouseLeave={hideTip} />
+                onMouseLeave={hideTip}
+                onClick={tapTip(d)} />
             </g>
           )
         })}
 
         {models.map((d) => (
-          <circle key={'h' + d.name} className="ch-hot" cx={sx(xVal(d))} cy={sy(yVal(d))} r={12}
+          <circle key={'h' + d.name} className="ch-hot" cx={sx(xVal(d))} cy={sy(yVal(d))} r={g.W < 600 ? 15 : 12}
             onMouseEnter={(e) => showTip(d, e.clientX, e.clientY)}
             onMouseMove={(e) => onTip(d, envSet.has(d.name), e.clientX, e.clientY)}
-            onMouseLeave={hideTip} />
+            onMouseLeave={hideTip}
+            onClick={tapTip(d)} />
         ))}
       </svg>
     </div>
@@ -348,8 +459,12 @@ function monthTicks(t0: number, t1: number, maxTicks = 7): number[] {
   }
   return ticks
 }
+// log-axis ticks; 1 renders as "≤1" (zero-coverage models clamp there)
+function coverageTicks(max: number): number[] {
+  return [1, 3, 10, 30, 100, 300].filter((t) => t <= max)
+}
 
-type TipKind = 'price' | 'date' | 'context' | 'split' | 'cap'
+type TipKind = 'price' | 'date' | 'context' | 'split' | 'hype'
 type Tip = {
   d: ChartModel
   onEnv: boolean
@@ -390,34 +505,60 @@ function RankBars({ icon, title, subtitle, unit, items }: {
   )
 }
 
-// ── monthly count columns (release cadence) ─────────────────────────────────
-function ReleaseColumns({ icon, title, subtitle, months }: {
+// ── list price vs street price (Phase U registry data) ─────────────────────
+function DiscountBars({ icon, title, subtitle, items }: {
   icon: ReactNode
   title: string
   subtitle: string
-  months: { ms: number; label: string; count: number }[]
+  items: { name: string; color: string; pct: number; list: number; street: number; provider: string }[]
 }) {
-  const max = Math.max(...months.map((m) => m.count), 1)
-  let lastYear = ''
+  const max = Math.max(...items.map((i) => i.pct), 1)
+  const usd = (v: number) => (v >= 10 ? `$${v.toFixed(0)}` : `$${v.toFixed(2)}`)
   return (
     <div className="ch-card">
       <div className="ch-head"><span className="ic">{icon}</span><div><h2>{title}</h2><p>{subtitle}</p></div></div>
-      <div className="ch-cols">
-        {months.map((m) => (
-          <div className="ch-col" key={m.ms}
-            title={`${new Date(m.ms).toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' })} · ${m.count} ${m.count === 1 ? 'release' : 'releases'}`}>
-            <span className="ch-col-n">{m.count || ''}</span>
-            <span className="ch-col-bar" style={{ height: `${(m.count / max) * 100}%` }} />
+      <div className="ch-bars">
+        {items.map((it) => (
+          <div className="ch-disc" key={it.name}>
+            <div className="ch-bar-row" title={`List ${usd(it.list)}/M → ${usd(it.street)}/M via ${it.provider}`}>
+              <span className="ch-bar-name">{it.name}</span>
+              <span className="ch-bar-track"><span className="ch-bar-fill" style={{ width: `${(it.pct / max) * 100}%`, background: it.color }} /></span>
+              <span className="ch-bar-val">-{Math.round(it.pct)}%</span>
+            </div>
+            <div className="ch-disc-sub">{usd(it.list)} list · {usd(it.street)} via {it.provider}</div>
           </div>
         ))}
       </div>
-      <div className="ch-cols-x">
-        {months.map((m) => {
-          const yr = new Date(m.ms).toLocaleDateString('en-US', { year: '2-digit', timeZone: 'UTC' })
-          const showYr = yr !== lastYear
-          lastYear = yr
-          return <span key={m.ms}>{m.label}{showYr ? ` ’${yr}` : ''}</span>
-        })}
+      <p className="ch-footnote">$ per 1M input tokens: the vendor&rsquo;s list price against the cheapest credible provider on OpenRouter (promos, degraded quants, and short-context deployments excluded).</p>
+    </div>
+  )
+}
+
+// ── fullscreen chart overlay ────────────────────────────────────────────────
+function ChartOverlay({ title, onClose, children, compactViewport }: {
+  title: string
+  onClose: () => void
+  children: ReactNode
+  compactViewport: boolean
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', onKey)
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => { document.removeEventListener('keydown', onKey); document.body.style.overflow = prev }
+  }, [onClose])
+  return (
+    <div className="ch-overlay" role="dialog" aria-modal="true" aria-label={title} onClick={onClose}>
+      <div className="ch-overlay-panel" onClick={(e) => e.stopPropagation()}>
+        <div className="ch-overlay-bar">
+          <span className="ch-overlay-title">{title}</span>
+          {compactViewport && <span className="ch-overlay-hint">Rotate your phone for the full-width view</span>}
+          <button className="ch-overlay-close" onClick={onClose} aria-label="Close chart">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 3l8 8M11 3l-8 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg>
+          </button>
+        </div>
+        {children}
       </div>
     </div>
   )
@@ -426,6 +567,13 @@ function ReleaseColumns({ icon, title, subtitle, months }: {
 // ── the charts + shared tooltip ─────────────────────────────────────────────
 export function ModelLandscape({ models }: { models: Model[] }) {
   const [tip, setTip] = useState<Tip | null>(null)
+  const [expanded, setExpanded] = useState<string | null>(null)
+  const compact = useCompact()
+  const pageGeom = useMemo(() => makeGeom(compact), [compact])
+  // The overlay gets desktop geometry whenever the viewport is wide enough
+  // (including a rotated phone); a portrait phone keeps compact geometry and
+  // shows the rotate hint instead of rendering unreadable desktop text.
+  const overlayGeom = pageGeom
 
   const data = useMemo(() => {
     // colors for every vendor that appears anywhere
@@ -447,8 +595,7 @@ export function ModelLandscape({ models }: { models: Model[] }) {
       release: m.released_at ?? '',
       value: NaN,
       context: m.context_window ?? NaN,
-      coding: m.buckets?.coding ?? NaN,
-      reasoning: m.buckets?.reasoning ?? NaN,
+      coverage: m.coverage_count ?? 0,
       openWeight: m.is_open_weight ?? null,
     })
 
@@ -457,11 +604,11 @@ export function ModelLandscape({ models }: { models: Model[] }) {
     const valueModels = priceModels.map((m) => ({ ...m, value: m.eci / m.price }))
     const contextModels = models.filter((m) => m.context_window != null && m.released_at).map(toCM)
     const openClosed = eciBase.filter((m) => m.openWeight === true || m.openWeight === false)
-    const capModels = models
-      .filter((m) => m.buckets?.coding != null && m.buckets?.reasoning != null)
-      .map(toCM)
+    // hype map: every model with a capability score (zero coverage is a signal
+    // too — that's the "under the radar" quadrant)
+    const hypeModels = eciBase
 
-    // ECI Y axis shared by the price + time + split charts
+    // ECI Y axis shared by the price + time + split + hype charts
     const ecis = eciBase.map((m) => m.eci)
     const eMin = ecis.length ? Math.min(...ecis) : 0
     const eMax = ecis.length ? Math.max(...ecis) : 1
@@ -476,35 +623,28 @@ export function ModelLandscape({ models }: { models: Model[] }) {
       .slice(0, 12)
       .map((m) => ({ name: m.name, color: colorFor(m.author), value: m.value, eci: m.eci, price: m.price }))
 
-    // release cadence: count per calendar month, gaps filled so spacing is even
-    const monthMap = new Map<number, { count: number; names: string[] }>()
-    for (const m of models) {
-      if (!m.released_at) continue
-      const d = new Date(m.released_at)
-      const ms = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1)
-      const cur = monthMap.get(ms) ?? { count: 0, names: [] }
-      cur.count++; cur.names.push(m.name)
-      monthMap.set(ms, cur)
-    }
-    const releasesByMonth: { ms: number; label: string; count: number }[] = []
-    if (monthMap.size) {
-      const keys = [...monthMap.keys()].sort((a, b) => a - b)
-      const cursor = new Date(keys[0])
-      while (cursor.getTime() <= keys[keys.length - 1]) {
-        const ms = cursor.getTime()
-        releasesByMonth.push({
-          ms,
-          label: cursor.toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' }),
-          count: monthMap.get(ms)?.count ?? 0,
-        })
-        cursor.setUTCMonth(cursor.getUTCMonth() + 1)
-      }
-    }
+    // list vs street: vendor list price against the credible floor (input $/M)
+    const discounts = models
+      .filter((m) =>
+        m.vendor_price_in != null && m.vendor_price_in > 0 &&
+        m.price_in != null && m.price_in > 0 && m.price_in < m.vendor_price_in &&
+        m.floor_provider != null)
+      .map((m) => ({
+        name: m.name,
+        color: colorFor(authorKey(m.vendor)),
+        pct: (1 - (m.price_in as number) / (m.vendor_price_in as number)) * 100,
+        list: m.vendor_price_in as number,
+        street: m.price_in as number,
+        provider: m.floor_provider as string,
+      }))
+      .filter((d) => d.pct >= 5)
+      .sort((a, b) => b.pct - a.pct)
+      .slice(0, 10)
 
-    return { authors: authorsMap, eciBase, priceModels, valueModels, contextModels, openClosed, capModels, eciAxis, valueRank, releasesByMonth }
+    return { authors: authorsMap, eciBase, priceModels, contextModels, openClosed, hypeModels, eciAxis, valueRank, discounts }
   }, [models])
 
-  const { authors, eciBase, priceModels, contextModels, openClosed, capModels, eciAxis, valueRank, releasesByMonth } = data
+  const { authors, eciBase, priceModels, contextModels, openClosed, hypeModels, eciAxis, valueRank, discounts } = data
 
   const showTip = (d: ChartModel, onEnv: boolean, cx: number, cy: number, kind: TipKind) => {
     const accent = kind === 'split'
@@ -525,7 +665,7 @@ export function ModelLandscape({ models }: { models: Model[] }) {
       rows.push({ k: 'Released', v: fmtFullDate(d.release) }, { k: 'Capability (ECI)', v: d.eci.toFixed(1) }, { k: 'Access', v: d.openWeight ? 'Open-weight' : 'Proprietary' })
       badge = onEnv ? 'Frontier' : null
     } else {
-      rows.push({ k: 'Coding', v: `${Math.round(d.coding)} pct` }, { k: 'Reasoning', v: `${Math.round(d.reasoning)} pct` })
+      rows.push({ k: 'News stories', v: `${d.coverage}` }, { k: 'Capability (ECI)', v: d.eci.toFixed(1) })
     }
     const left = Math.max(14, Math.min(cx + 16, window.innerWidth - 244))
     const top = Math.max(14, Math.min(cy + 16, window.innerHeight - 190))
@@ -560,6 +700,22 @@ export function ModelLandscape({ models }: { models: Model[] }) {
     return [Math.min(...cs) * 0.8, Math.max(...cs) * 1.2]
   }, [contextModels])
 
+  // Log coverage axis from 1 (zero-coverage models clamp to 1; "no stories"
+  // and "one story" are the same editorial fact). The domain is anchored so
+  // the geometric center — which IS the visual center on a log scale — sits
+  // at 10 stories: double-digit coverage means the model broke through.
+  // Symmetric quadrants AND a threshold that means something. (v1 median
+  // split was lopsided; v2 sqrt-center split ran the fence through Fable 5
+  // and GPT-5, emptying "hyped and delivering" — both were fence artifacts.)
+  const hypeDomain = useMemo<[number, number]>(() => {
+    const max = Math.max(...hypeModels.map((m) => m.coverage), 10)
+    return [1, Math.max(100, max * 1.15)]
+  }, [hypeModels])
+  const hypeMids = useMemo(() => ({
+    x: Math.sqrt(hypeDomain[0] * hypeDomain[1]), // geometric center of the log axis
+    y: (eciAxis.domain[0] + eciAxis.domain[1]) / 2,
+  }), [hypeDomain, eciAxis])
+
   const dotIcon = (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2.5 13.5h11" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" /><circle cx="4" cy="10" r="1.5" fill="currentColor" /><circle cx="7.5" cy="7" r="1.5" fill="currentColor" /><circle cx="11" cy="4" r="1.5" fill="currentColor" /></svg>
   )
@@ -575,11 +731,11 @@ export function ModelLandscape({ models }: { models: Model[] }) {
   const splitIcon = (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3 12.5l3.5-4 2 2.2L13 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /><path d="M3 8.5l3.5 1 2-1.5L13 9.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" opacity="0.5" /></svg>
   )
-  const scatterIcon = (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="4.5" cy="11" r="1.4" fill="currentColor" /><circle cx="8" cy="7.5" r="1.4" fill="currentColor" /><circle cx="11.5" cy="4.5" r="1.4" fill="currentColor" /><circle cx="11" cy="10" r="1.4" fill="currentColor" /><circle cx="5.5" cy="5.5" r="1.4" fill="currentColor" /></svg>
+  const flameIcon = (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 2s3.8 3 3.8 6.6a3.8 3.8 0 0 1-7.6 0C4.2 6.4 6 5 6 5s-.2 1.6.8 2.4C7.4 5.4 8 2 8 2z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" /></svg>
   )
-  const colsIcon = (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="2.5" y="9" width="2.6" height="4.5" rx="0.6" fill="currentColor" /><rect x="6.7" y="5.5" width="2.6" height="8" rx="0.6" fill="currentColor" /><rect x="10.9" y="7.5" width="2.6" height="6" rx="0.6" fill="currentColor" /></svg>
+  const tagIcon = (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8.6 2.5H13.5v4.9l-6.1 6.1a1.4 1.4 0 0 1-2 0L2.5 10.6a1.4 1.4 0 0 1 0-2l6.1-6.1z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" /><circle cx="10.8" cy="5.2" r="1" fill="currentColor" /></svg>
   )
 
   const access: Group = {
@@ -588,63 +744,119 @@ export function ModelLandscape({ models }: { models: Model[] }) {
     colors: { open: { color: OPEN_COLOR, label: 'Open-weight' }, closed: { color: CLOSED_COLOR, label: 'Proprietary' } },
   }
 
-  return (
-    <div className="ch-embed">
-      {priceModels.length >= 2 && (
+  // hype-map story colors + labels: emphasize the two interesting corners
+  const HYPE_QUIET = 'oklch(0.74 0.13 162)'
+  const HYPE_HEAT = 'oklch(0.72 0.14 60)'
+  const hypeQuad = (d: ChartModel) =>
+    d.coverage < hypeMids.x && d.eci >= hypeMids.y ? 'quiet'
+    : d.coverage >= hypeMids.x && d.eci < hypeMids.y ? 'heat'
+    : null
+  const hypeDotColor = (d: ChartModel) =>
+    hypeQuad(d) === 'quiet' ? HYPE_QUIET : hypeQuad(d) === 'heat' ? HYPE_HEAT : undefined
+  const pickHypeLabels = (ms: ChartModel[]) => {
+    const quiet = ms.filter((m) => hypeQuad(m) === 'quiet').sort((a, b) => b.eci - a.eci).slice(0, 3)
+    const heat = ms.filter((m) => hypeQuad(m) === 'heat').sort((a, b) => b.coverage - a.coverage).slice(0, 2)
+    const delivering = ms.filter((m) => m.coverage >= hypeMids.x && m.eci >= hypeMids.y)
+      .sort((a, b) => b.coverage - a.coverage).slice(0, 2)
+    return [...new Map([...quiet, ...heat, ...delivering].map((m) => [m.name, m])).values()]
+  }
+
+  // Every SVG chart, defined once so the inline flow and the fullscreen
+  // overlay render the same config at different geometries.
+  const chartDefs: { id: string; title: string; when: boolean; render: (g: Geom, onExpand?: () => void) => ReactNode }[] = [
+    {
+      id: 'price', title: 'Price vs intelligence', when: priceModels.length >= 2,
+      render: (g, onExpand) => (
         <FrontierChart
           icon={dotIcon}
           title="Price vs intelligence"
           subtitle="Blended API price (log scale) against the capability index. The line traces the value frontier — the cheapest model at each capability level."
-          models={priceModels} authors={authors}
+          models={priceModels} authors={authors} geom={g} onExpand={onExpand}
           x={{ type: 'log', value: (d) => d.price, domain: priceDomain, ticks: priceTicks(priceDomain), format: fmtPrice, label: 'Blended price ($ / 1M tokens)' }}
-          y={eciAxis} line="linear" accentLabel="Value frontier" gradId="chGradPrice"
+          y={eciAxis} line="linear" accentLabel="Value frontier" gradId={`chGradPrice${onExpand ? '' : 'X'}`}
           onTip={(d, e, cx, cy) => showTip(d, e, cx, cy, 'price')} onHideTip={hideTip}
         />
-      )}
-
-      {eciBase.length >= 2 && (
+      ),
+    },
+    {
+      id: 'hype', title: 'Coverage vs capability', when: hypeModels.length >= 4,
+      render: (g, onExpand) => (
+        <FrontierChart
+          icon={flameIcon}
+          title="Coverage vs capability"
+          subtitle="Attention is not ability. Green models score higher than their news coverage suggests; amber models draw headlines their benchmark scores don't back up."
+          models={hypeModels} authors={authors} geom={g} onExpand={onExpand}
+          envelope={false} labels pickLabels={pickHypeLabels}
+          refX={hypeMids.x} refY={hypeMids.y}
+          quadTint={{ tl: HYPE_QUIET, br: HYPE_HEAT }}
+          dotColor={hypeDotColor}
+          legendItems={[{ color: HYPE_QUIET, label: 'Quietly strong' }, { color: HYPE_HEAT, label: 'More heat than light' }]}
+          quadLabels={['quietly strong', 'hyped and delivering', 'under the radar', 'more heat than light']}
+          x={{ type: 'log', value: (d) => Math.max(1, d.coverage), domain: hypeDomain, ticks: coverageTicks(hypeDomain[1]), format: (v) => (v === 1 ? '≤1' : v), label: 'News stories covering the model' }}
+          y={eciAxis} line="linear" accentLabel="" gradId={`chGradHype${onExpand ? '' : 'X'}`}
+          onTip={(d, e, cx, cy) => showTip(d, e, cx, cy, 'hype')} onHideTip={hideTip}
+        />
+      ),
+    },
+    {
+      id: 'time', title: 'How the frontier moved', when: eciBase.length >= 2,
+      render: (g, onExpand) => (
         <FrontierChart
           icon={stepIcon}
           title="How the frontier moved"
           subtitle="Every model from the past year plotted by release date and intelligence. The line is the record envelope — each step up set a new high-water mark."
-          models={eciBase} authors={authors}
+          models={eciBase} authors={authors} geom={g} onExpand={onExpand}
           x={{ type: 'time', value: (d) => d.releaseMs, domain: timeDomain, ticks: monthTicks(timeDomain[0], timeDomain[1]), format: fmtMonthYear, label: 'Release date' }}
-          y={eciAxis} line="step" accentLabel="Record envelope" gradId="chGradTime"
+          y={eciAxis} line="step" accentLabel="Record envelope" gradId={`chGradTime${onExpand ? '' : 'X'}`}
           onTip={(d, e, cx, cy) => showTip(d, e, cx, cy, 'date')} onHideTip={hideTip}
         />
-      )}
-
-      {releasesByMonth.length >= 2 && (
-        <ReleaseColumns
-          icon={colsIcon}
-          title="Model releases per month"
-          subtitle="How many of the tracked models launched each month. The pace of notable releases, straight from the calendar."
-          months={releasesByMonth}
-        />
-      )}
-
-      {contextModels.length >= 2 && (
+      ),
+    },
+    {
+      id: 'ctx', title: 'Context windows over time', when: contextModels.length >= 2,
+      render: (g, onExpand) => (
         <FrontierChart
           icon={ctxIcon}
           title="Context windows over time"
           subtitle="The maximum context length on offer (log scale), by release date. The line is the record — the context race ran from a few thousand tokens to over a million."
-          models={contextModels} authors={authors}
+          models={contextModels} authors={authors} geom={g} onExpand={onExpand}
           x={{ type: 'time', value: (d) => d.releaseMs, domain: ctxTimeDomain, ticks: monthTicks(ctxTimeDomain[0], ctxTimeDomain[1]), format: fmtMonthYear, label: 'Release date' }}
           y={{ type: 'log', value: (d) => d.context, domain: ctxDomain, ticks: pow10Ticks(ctxDomain[0], ctxDomain[1]), format: fmtTokens }}
-          line="step" accentLabel="Record" gradId="chGradCtx"
+          line="step" accentLabel="Record" gradId={`chGradCtx${onExpand ? '' : 'X'}`}
           onTip={(d, e, cx, cy) => showTip(d, e, cx, cy, 'context')} onHideTip={hideTip}
         />
-      )}
-
-      {openClosed.length >= 4 && (
+      ),
+    },
+    {
+      id: 'split', title: 'Open-weight vs proprietary', when: openClosed.length >= 4,
+      render: (g, onExpand) => (
         <FrontierChart
           icon={splitIcon}
           title="Open-weight vs proprietary"
           subtitle="The intelligence frontier over time, split by access. Two record envelopes show how far open-weight releases trail (or keep pace with) closed models."
-          models={openClosed} authors={authors} groups={access}
+          models={openClosed} authors={authors} groups={access} geom={g} onExpand={onExpand}
           x={{ type: 'time', value: (d) => d.releaseMs, domain: timeDomain, ticks: monthTicks(timeDomain[0], timeDomain[1]), format: fmtMonthYear, label: 'Release date' }}
-          y={eciAxis} line="step" accentLabel="Frontier" gradId="chGradSplit"
+          y={eciAxis} line="step" accentLabel="Frontier" gradId={`chGradSplit${onExpand ? '' : 'X'}`}
           onTip={(d, e, cx, cy) => showTip(d, e, cx, cy, 'split')} onHideTip={hideTip}
+        />
+      ),
+    },
+  ]
+
+  const expandedDef = chartDefs.find((c) => c.id === expanded)
+
+  return (
+    <div className="ch-embed">
+      {chartDefs.map((c) => c.when && (
+        <div key={c.id}>{c.render(pageGeom, () => setExpanded(c.id))}</div>
+      ))}
+
+      {discounts.length >= 3 && (
+        <DiscountBars
+          icon={tagIcon}
+          title="List price vs street price"
+          subtitle="The biggest gaps between what the vendor charges and what the cheapest credible provider charges for the same open-weights model."
+          items={discounts}
         />
       )}
 
@@ -658,22 +870,15 @@ export function ModelLandscape({ models }: { models: Model[] }) {
         />
       )}
 
-      {capModels.length >= 4 && (
-        <FrontierChart
-          icon={scatterIcon}
-          title="Coding vs reasoning"
-          subtitle="Each model's coding percentile against its reasoning percentile. The diagonal marks balanced models; points off it lean toward one skill. Top-right is strong at both."
-          models={capModels} authors={authors} envelope={false} labels={false} diagonal
-          x={{ type: 'linear', value: (d) => d.coding, domain: [0, 100], ticks: [0, 25, 50, 75, 100], format: (v) => v, label: 'Coding percentile  ·  reasoning on the vertical axis' }}
-          y={{ value: (d) => d.reasoning, domain: [0, 100], ticks: [0, 25, 50, 75, 100], format: (v) => v }}
-          line="linear" accentLabel="" gradId="chGradCap"
-          onTip={(d, e, cx, cy) => showTip(d, e, cx, cy, 'cap')} onHideTip={hideTip}
-        />
-      )}
-
       <p className="ch-footnote">
-        Benchmarks &amp; model data from Epoch AI (CC BY); pricing blended across providers via OpenRouter. ECI = Epoch Capabilities Index; percentiles rank a model against the others tracked here.
+        Benchmarks &amp; model data from Epoch AI (CC BY); pricing blended across providers via OpenRouter; coverage counts are the news stories linked to each model on Model Beat. ECI = Epoch Capabilities Index.
       </p>
+
+      {expandedDef && (
+        <ChartOverlay title={expandedDef.title} onClose={() => setExpanded(null)} compactViewport={compact}>
+          {expandedDef.render(overlayGeom)}
+        </ChartOverlay>
+      )}
 
       {tip && (
         <div className="ch-tip" style={{ left: tip.left, top: tip.top }}>

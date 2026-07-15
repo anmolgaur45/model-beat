@@ -3,7 +3,7 @@ import { SITE_URL as SITE } from '@/lib/site'
 import { comparePairs, pairModelNames } from '@/lib/comparePairs'
 import { BEST_VIEWS } from '@/lib/bestModels'
 
-export const revalidate = 86400
+export const dynamic = 'force-static'
 
 // llms.txt — a curated, plain-text map of the site for AI crawlers/answer engines
 // (https://llmstxt.org). Lists the high-value, data-rich pages we want cited,

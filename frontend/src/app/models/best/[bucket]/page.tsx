@@ -10,8 +10,6 @@ import { ModelsExplorer } from '@/components/ModelsExplorer'
 import { BEST_VIEWS, bestView, rankModels, buildFaq } from '@/lib/bestModels'
 import type { TabKey } from '@/lib/modelBuckets'
 
-export const revalidate = 3600
-
 const SITE = SITE_URL
 
 // No catch: a DB blip during ISR regeneration must throw so Next keeps serving

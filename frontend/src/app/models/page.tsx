@@ -5,8 +5,6 @@ import { SITE_URL } from '@/lib/site'
 import { ModelsExplorer } from '@/components/ModelsExplorer'
 import { NavBar } from '@/components/NavBar'
 
-export const revalidate = 3600
-
 const SITE = SITE_URL
 
 async function loadModels(): Promise<Model[]> {

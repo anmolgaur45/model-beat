@@ -9,8 +9,6 @@ import { CompareTable } from '@/components/CompareTable'
 import { NavBar } from '@/components/NavBar'
 import { comparePairs, pairKey } from '@/lib/comparePairs'
 
-export const revalidate = 3600
-
 const SITE = SITE_URL
 const SLUG_RE = /^[a-z0-9-]+$/
 

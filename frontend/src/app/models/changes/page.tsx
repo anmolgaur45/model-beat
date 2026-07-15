@@ -13,8 +13,6 @@ export const metadata: Metadata = {
   alternates: { canonical: '/models/changes' },
 }
 
-export const revalidate = 1800
-
 function fmtDate(iso: string): string {
   return new Date(iso).toLocaleDateString('en-US', {
     month: 'short', day: 'numeric', timeZone: 'UTC',

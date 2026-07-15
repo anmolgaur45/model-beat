@@ -5,7 +5,8 @@ import type { ModelEvent } from '@/types/article'
 
 // Phase V: the change feed as RSS — the zero-infra "responsive signal" for
 // power users (no accounts, no email). Summaries are self-contained.
-export const revalidate = 1800
+// Built once per deploy (zero ISR writes, 2026-07-14); 3h redeploys refresh it.
+export const dynamic = 'force-static'
 
 function esc(s: string): string {
   return s

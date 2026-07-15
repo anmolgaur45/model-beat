@@ -17,18 +17,21 @@ import { PapersFold } from '@/components/PapersFold'
 // Match the homepage's top-story gate: only a high-signal lead gets the hero card.
 const TOP_STORY_MIN = 6
 
-// 24h: past days never change; today's and yesterday's pages are purged by
-// /api/revalidate after each pipeline run (ISR-write budget, 2026-07-12).
-export const revalidate = 86400
-
-// Registers the route for ISR (see models/[slug] — same private/no-store bug).
-// Prerender the recent, substantive days; the long tail builds on demand and
-// caches for the revalidate window.
+// Fully static, no TTL: freshness comes from the pipeline-triggered redeploy
+// every 3h, so revalidation writes are zero (Hobby ISR-write budget,
+// 2026-07-14). Prerender the sitemap's day list (same substantive-and-recent
+// gate — an ungated DISTINCT pulled 1,207 days incl. backdated 2017 ones and
+// flaked the build). Thin/backdated days and a brand-new day between deploys
+// render on demand and cache once per deploy (a handful of writes/day).
 export async function generateStaticParams() {
   const rows = await sql<{ day: string }[]>`
-    SELECT DISTINCT to_char(first_published_at AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS day
-    FROM clusters
-    WHERE first_published_at >= now() - interval '14 days'
+    SELECT to_char(first_published_at AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS day
+    FROM clusters c
+    WHERE first_published_at >= now() - interval '370 days'
+      AND EXISTS (SELECT 1 FROM articles a
+                  WHERE a.cluster_id = c.id AND a.source_name NOT LIKE 'arXiv%')
+    GROUP BY day
+    HAVING count(*) >= 3
   `
   return rows.map((r) => ({ date: r.day }))
 }

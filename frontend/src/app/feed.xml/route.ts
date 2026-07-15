@@ -2,7 +2,9 @@ import sql from '@/lib/db'
 import { SITE_URL as SITE } from '@/lib/site'
 import { storyPath } from '@/lib/story'
 
-export const revalidate = 3600
+// Built once per deploy (zero ISR writes, 2026-07-14); the 3h redeploy
+// cadence keeps the feed fresh.
+export const dynamic = 'force-static'
 
 function esc(s: string): string {
   return s

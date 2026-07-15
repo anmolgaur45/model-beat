@@ -7,8 +7,6 @@ import { BEST_VIEWS } from '@/lib/bestModels'
 import { storyPath } from '@/lib/story'
 import { listIssues } from '@/lib/digestIssues'
 
-export const revalidate = 3600
-
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // Substantive, recent days only (>=3 stories within ~1y) — matches the day
   // pages' index gate, so the sitemap never lists noindexed thin/backdated days.

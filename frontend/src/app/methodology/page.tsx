@@ -11,7 +11,6 @@ export const metadata: Metadata = {
 }
 
 // Static, content-only page; nothing here reads the database.
-export const revalidate = 86400
 
 export default function MethodologyPage() {
   const jsonLd = {

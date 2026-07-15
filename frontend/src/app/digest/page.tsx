@@ -12,8 +12,7 @@ const SITE = SITE_URL
 
 // Phase W3: the page shows the product, not a description of it — the live
 // week section below is the same data the Thursday issue is curated from,
-// refreshed by the pipeline's revalidate call every 3 hours.
-export const revalidate = 1800
+// rebuilt by the pipeline-triggered redeploy every 3 hours.
 
 export const metadata: Metadata = {
   // absolute: the layout template appends "| Model Beat", which double-brands

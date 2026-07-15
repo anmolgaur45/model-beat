@@ -16,20 +16,13 @@ import { CATEGORY_LABELS } from '@/components/categoryMeta'
 import { storyPath } from '@/lib/story'
 import { timeAgo } from '@/lib/timeFormat'
 
-// 7 days: a story's coverage only accretes in its first ~48h, and the
-// pipeline's /api/revalidate purges exactly the stories that changed each
-// run. A short TTL here let the story-page crawler force a re-render+ISR
-// write per page per hour (the 2026-07-12 Vercel ISR-writes limit email).
-export const revalidate = 604800
-
-// Registers the route for ISR without prerendering ~3k stories at build time:
-// each page builds on first request and then caches for the revalidate window.
-// Before this, the route was fully dynamic (private, no-store) and crawler
-// bursts re-rendered every hit — the load behind the 2026-07-11 Cloud SQL
-// connection-slot incident.
-export function generateStaticParams(): { id: string; slug?: string[] }[] {
-  return []
-}
+// SSR, no ISR cache: every cached story page costs an ISR write, and with
+// ~3k stories re-cached after each deploy that burn exhausted the Hobby
+// 200k-write budget (2026-07-14). Stories are the low-traffic long tail, so
+// they render per request instead. DB load per hit is one pooled query
+// (pool max 3, fluid compute shares instances); if a story ever draws real
+// traffic, re-add generateStaticParams for the newest N days only.
+export const dynamic = 'force-dynamic'
 
 const SITE = SITE_URL
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i

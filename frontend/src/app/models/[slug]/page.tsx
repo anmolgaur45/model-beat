@@ -11,9 +11,8 @@ import { benchmarkMeta, GROUP_ORDER, GROUP_LABELS } from '@/lib/benchmarks'
 import { flagshipModels, pairKey } from '@/lib/comparePairs'
 import sql from '@/lib/db'
 
-// Matches the 3h pipeline cadence — fresher re-renders buy nothing and cost
-// ISR writes (2026-07-12 limit email).
-export const revalidate = 10800
+// Static at build; the pipeline-triggered redeploy every 3h keeps these
+// current (zero ISR writes, 2026-07-14).
 
 // Registers the route for ISR. Without generateStaticParams Next served these
 // pages fully dynamic (private, no-store) despite the revalidate export, so

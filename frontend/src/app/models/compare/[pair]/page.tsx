@@ -10,9 +10,8 @@ import { CompareTable } from '@/components/CompareTable'
 import { NavBar } from '@/components/NavBar'
 import { comparePairs, comparePairKeys, pairKey, pairModelNames } from '@/lib/comparePairs'
 
-// 24h: pair pages move on benchmark/price syncs, which are debounced and
-// rare; day-old numbers are acceptable here (ISR-write budget, 2026-07-12).
-export const revalidate = 86400
+// Static at build; the pipeline-triggered redeploy every 3h keeps these
+// current (zero ISR writes, 2026-07-14).
 
 const SITE = SITE_URL
 const SLUG_RE = /^[a-z0-9-]+$/

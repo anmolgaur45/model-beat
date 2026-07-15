@@ -10,9 +10,9 @@ import { storyPath } from '@/lib/story'
 import { isPaperCluster } from '@/lib/papers'
 import HomePageClient from './HomePageClient'
 
-// ISR safety net; the client island also refetches, so users stay current and
-// the pipeline's /api/revalidate refreshes on new data.
-export const revalidate = 3600
+// Static at build; the pipeline-triggered redeploy every 3h is the freshness
+// mechanism (zero ISR writes, 2026-07-14). The client island still refetches,
+// so users see new stories between deploys.
 
 // Server "today" in UTC (Vercel runs UTC); the client nudges to the visitor's
 // local day post-hydration if their timezone has already rolled over.

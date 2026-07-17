@@ -832,13 +832,24 @@ def build_alias_index(models: list[tuple[str, str]]) -> dict[str, str]:
 
 
 def match_models(text: str, aliases: dict[str, str]) -> list[str]:
-    """Return model_ids whose name appears in `text` (deterministic, no LLM)."""
+    """Return model_ids whose name appears in `text` (deterministic, no LLM).
+
+    Matches require a version boundary: "GPT-5" must NOT match inside
+    "GPT-5.6 Sol" and "Kimi K2" must not match "Kimi K2.5" — a bare substring
+    check tagged every newer version's story with its ancestor (2026-07-17).
+    """
     low = " ".join(text.lower().split())
     collapsed = re.sub(r"[^a-z0-9]", "", text.lower())
     found: dict[str, bool] = {}
     for alias, model_id in aliases.items():
         alias_collapsed = re.sub(r"[^a-z0-9]", "", alias)
-        if alias in low or (len(alias_collapsed) >= 5 and alias_collapsed in collapsed):
+        word_hit = re.search(
+            r"(?<![a-z0-9])" + re.escape(alias) + r"(?![a-z0-9.\-])", low
+        )
+        collapsed_hit = len(alias_collapsed) >= 5 and re.search(
+            re.escape(alias_collapsed) + r"(?![0-9])", collapsed
+        )
+        if word_hit or collapsed_hit:
             found[model_id] = True
     return list(found)
 
@@ -1437,6 +1448,11 @@ def link_model_coverage(conn: psycopg.Connection) -> int:
     if not aliases:
         return 0
 
+    # Already-linked clusters are re-examined for their first 7 days: a launch
+    # story breaks BEFORE the model exists in the registry (OpenRouter listing
+    # lags the announcement), and the headline itself evolves as articles
+    # accrete — the Kimi K3 launch cluster linked only Claude Opus 4.8 because
+    # the once-only NOT EXISTS froze the link set on day one (2026-07-17).
     with conn.cursor() as cur:
         cur.execute(
             """
@@ -1446,7 +1462,8 @@ def link_model_coverage(conn: psycopg.Connection) -> int:
               AND c.category <> 'uncategorized'
               AND (c.category = 'model-releases'
                    OR c.significance_score >= %s)
-              AND NOT EXISTS (SELECT 1 FROM model_clusters mc WHERE mc.cluster_id = c.id)
+              AND (c.first_published_at >= now() - interval '7 days'
+                   OR NOT EXISTS (SELECT 1 FROM model_clusters mc WHERE mc.cluster_id = c.id))
             """,
             (settings.model_roster_days, settings.model_link_min_significance),
         )
@@ -1461,11 +1478,12 @@ def link_model_coverage(conn: psycopg.Connection) -> int:
                     "ON CONFLICT DO NOTHING",
                     (model_id, cluster_id),
                 )
-                cur.execute(
-                    "UPDATE models SET significance = GREATEST(significance, %s) WHERE id = %s",
-                    (significance or 0, model_id),
-                )
-            linked += 1
+                if cur.rowcount:
+                    cur.execute(
+                        "UPDATE models SET significance = GREATEST(significance, %s) WHERE id = %s",
+                        (significance or 0, model_id),
+                    )
+                    linked += 1
         conn.commit()
 
     log.info("models.linked", links=linked)

@@ -230,6 +230,20 @@ def test_build_alias_index_short_name_requires_a_version_digit():
     assert match_models("She wrote a haiku about the sea", aliases) == []
 
 
+def test_match_models_requires_version_boundary():
+    # "GPT-5" must not match inside "GPT-5.6 Sol" (ancestor-tagging bug, 2026-07-17)
+    aliases = build_alias_index([("id-1", "GPT-5"), ("id-2", "GPT-5.6 Sol")])
+    assert match_models("Kimi K3 nears GPT-5.6 Sol on benchmarks", aliases) == ["id-2"]
+    assert match_models("OpenAI retires GPT-5 from ChatGPT", aliases) == ["id-1"]
+
+
+def test_match_models_collapsed_requires_version_boundary():
+    # collapsed matching: "Kimi K2" must not match "KimiK2.5"
+    aliases = build_alias_index([("id-1", "Kimi K2"), ("id-2", "Kimi K2.5")])
+    assert match_models("Moonshot ships KimiK2.5 update", aliases) == ["id-2"]
+    assert match_models("Moonshot's Kimi K2 gains vision", aliases) == ["id-1"]
+
+
 # ── ECI roster supplement (models missing from the notable CSV) ────────────────
 
 def test_accessibility_to_open_weight():

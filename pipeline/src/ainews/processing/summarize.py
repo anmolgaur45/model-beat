@@ -37,6 +37,9 @@ Rules:
 - Neutral and factual. No marketing language, no editorializing, no hype words.
 - No preamble ("This article...", "The story...") — state the news directly.
 - Plain text only, no markdown.
+- Product and model names: use EXACTLY the name and version written in the headline or \
+excerpts (e.g. if they say "Opus", write "Opus", never "Claude 3 Opus" or any version \
+you remember). Never add, upgrade, or guess a version number that the sources do not state.
 
 Significance: {significance}/10
 Headline: {headline}

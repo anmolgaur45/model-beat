@@ -19,15 +19,18 @@ const TOP_STORY_MIN = 6
 
 // Fully static, no TTL: freshness comes from the pipeline-triggered redeploy
 // every 3h, so revalidation writes are zero (Hobby ISR-write budget,
-// 2026-07-14). Prerender the sitemap's day list (same substantive-and-recent
-// gate — an ungated DISTINCT pulled 1,207 days incl. backdated 2017 ones and
-// flaked the build). Thin/backdated days and a brand-new day between deploys
-// render on demand and cache once per deploy (a handful of writes/day).
+// 2026-07-14). Prerender only the recent substantive days (fixed 45-day window,
+// ~45 pages). A 370-day window (272 pages) grew denser as the site matured until
+// the parallel prerender exhausted Cloud SQL's ~47 connections and every deploy
+// failed for ~4 days (2026-07-22 incident). A FIXED window keeps build DB load
+// bounded over time. Older substantive days stay in the sitemap and render on
+// demand (still indexable); thin/backdated days and a brand-new day between
+// deploys likewise render on demand and cache.
 export async function generateStaticParams() {
   const rows = await sql<{ day: string }[]>`
     SELECT to_char(first_published_at AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS day
     FROM clusters c
-    WHERE first_published_at >= now() - interval '370 days'
+    WHERE first_published_at >= now() - interval '45 days'
       AND EXISTS (SELECT 1 FROM articles a
                   WHERE a.cluster_id = c.id AND a.source_name NOT LIKE 'arXiv%')
     GROUP BY day

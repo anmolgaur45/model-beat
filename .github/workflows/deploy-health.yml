@@ -1,0 +1,47 @@
+name: deploy-health
+
+# Guards against the 2026-07-22 incident: prod deploys silently failed for ~4
+# days (build exhausted Cloud SQL connections), so the DB updated but no fresh
+# static build reached production and the site went stale unnoticed.
+#
+# The check is pure black-box: the CDN `Age` header on a static page tells us
+# how long since the last successful deploy refreshed it. Freshness comes from
+# a pipeline redeploy every 3h, so a healthy page is almost always < 3h old.
+# Age past the threshold = deploys are broken. No DB access, no secrets.
+#
+# On failure, GitHub notifies the repo owner (ensure Actions failure
+# notifications are on). Manual run: Actions tab -> deploy-health -> Run workflow.
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'   # every 6 hours
+  workflow_dispatch: {}
+
+jobs:
+  freshness:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check prod deploy freshness
+        run: |
+          set -euo pipefail
+          URL="https://themodelbeat.com/models"
+          # 3 missed 3h deploy cycles = definitely broken (margin over CDN variance
+          # and the occasional single transient build failure, which self-heals).
+          MAX_AGE=32400   # 9 hours, in seconds
+
+          headers="$(curl -fsSI "$URL")"
+          code="$(printf '%s' "$headers" | head -1)"
+          age="$(printf '%s' "$headers" | grep -i '^age:' | tr -d '\r' | awk '{print $2}')"
+          age="${age:-0}"
+
+          echo "URL:    $URL"
+          echo "Status: $code"
+          echo "Age:    ${age}s (~$(( age / 3600 ))h)  |  threshold ${MAX_AGE}s (9h)"
+
+          if [ "$age" -gt "$MAX_AGE" ]; then
+            echo "::error::Prod is stale: /models has not been redeployed in ~$(( age / 3600 ))h."
+            echo "::error::Deploys are likely failing. Check Vercel build logs; the last"
+            echo "::error::cause was the day-page prerender exhausting Cloud SQL connections."
+            exit 1
+          fi
+          echo "OK: prod is fresh."

@@ -36,6 +36,8 @@ const securityHeaders = [
 ]
 
 const nextConfig: NextConfig = {
+  // For the contingency Docker image (see Dockerfile); Vercel ignores this.
+  output: 'standalone',
   productionBrowserSourceMaps: false,
   // Digest issue markdown (Phase W4) is read with fs at render time when a
   // revalidate re-renders these routes on Vercel; without explicit tracing

@@ -29,7 +29,7 @@ export interface Cluster {
   category: Category
   significance_score: number
   first_published_at: string // ISO timestamp (when the story first broke)
-  last_activity_at?: string // ISO timestamp (newest member article; timeline grouping)
+  peak_date?: string // YYYY-MM-DD, the day with the most coverage (homepage timeline grouping)
   article_count: number
   summary: string | null // AI synthesis (Phase J); null when not yet generated
   created_at: string

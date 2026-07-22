@@ -124,7 +124,7 @@ export default function HomePageClient({ initialDate, initialClusters, initialTo
   // Seed the timeline only for the exact server-rendered view (today, all
   // categories); any other date/category fetches fresh on the client.
   const { data: timelineData, isLoading: timelineLoading } = trpc.articles.getClusters.useQuery(
-    { date: selectedDate, category: categoryParam, limit: 100, by: 'activity' },
+    { date: selectedDate, category: categoryParam, limit: 100, by: 'peak' },
     {
       enabled: !isSearchMode,
       initialData:

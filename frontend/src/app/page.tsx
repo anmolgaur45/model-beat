@@ -32,7 +32,7 @@ const loadHome = cache(async () => {
   const caller = appRouter.createCaller(createContext())
   const date = serverToday()
   const [clusters, topStories, models] = await Promise.all([
-    caller.articles.getClusters({ date, limit: 100, by: 'activity' }),
+    caller.articles.getClusters({ date, limit: 100, by: 'peak' }),
     caller.articles.getTopStories({ days: 7, limit: 6 }),
     caller.articles.getModels({ limit: 200 }),
   ])

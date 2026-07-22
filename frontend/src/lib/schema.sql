@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS clusters (
   category            TEXT DEFAULT 'uncategorized',
   significance_score  FLOAT DEFAULT 0,
   first_published_at  TIMESTAMPTZ NOT NULL,
-  last_activity_at    TIMESTAMPTZ DEFAULT now(),
+  peak_date           DATE,
   article_count       INT DEFAULT 1,
   summary             TEXT,
   created_at          TIMESTAMPTZ DEFAULT NOW()
@@ -46,7 +46,7 @@ ALTER TABLE articles
 CREATE INDEX IF NOT EXISTS idx_articles_published_at  ON articles (published_at DESC);
 CREATE INDEX IF NOT EXISTS idx_articles_cluster_id    ON articles (cluster_id);
 CREATE INDEX IF NOT EXISTS idx_clusters_published_at  ON clusters (first_published_at DESC);
-CREATE INDEX IF NOT EXISTS idx_clusters_last_activity ON clusters (last_activity_at DESC);
+CREATE INDEX IF NOT EXISTS idx_clusters_peak_date ON clusters (peak_date DESC);
 CREATE INDEX IF NOT EXISTS idx_clusters_category      ON clusters (category);
 
 -- Approximate nearest-neighbor index for embedding similarity search (Phase 2)

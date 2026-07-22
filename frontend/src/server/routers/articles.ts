@@ -242,10 +242,11 @@ export const articlesRouter = router({
         category: zCategory,
         limit: z.number().min(1).max(100).default(50),
         // 'published' (default) buckets by when a story first broke — the stable
-        // SEO archive used by /day/[date]. 'activity' buckets by the newest member
-        // article, so a developing multi-day story surfaces on the day its coverage
-        // is active — the homepage timeline (2026-07-22).
-        by: z.enum(['published', 'activity']).default('published'),
+        // SEO archive used by /day/[date]. 'peak' buckets by peak_date, the day a
+        // story got the most coverage ("the day it was the biggest story"), so a
+        // developing story surfaces on its biggest day and a straggler can't drag
+        // an old story onto today — the homepage timeline (2026-07-23).
+        by: z.enum(['published', 'peak']).default('published'),
       }),
     )
     .query(async ({ input }) => {
@@ -253,14 +254,17 @@ export const articlesRouter = router({
         ? sql`AND category = ${input.category}`
         : sql``
 
-      const dateCol = input.by === 'activity' ? sql`last_activity_at` : sql`first_published_at`
       let dateFilter = sql``
       if (input.date) {
-        const start = new Date(input.date)
-        start.setUTCHours(0, 0, 0, 0)
-        const end = new Date(input.date)
-        end.setUTCHours(23, 59, 59, 999)
-        dateFilter = sql`AND ${dateCol} >= ${start.toISOString()} AND ${dateCol} <= ${end.toISOString()}`
+        if (input.by === 'peak') {
+          dateFilter = sql`AND peak_date = ${input.date}`
+        } else {
+          const start = new Date(input.date)
+          start.setUTCHours(0, 0, 0, 0)
+          const end = new Date(input.date)
+          end.setUTCHours(23, 59, 59, 999)
+          dateFilter = sql`AND first_published_at >= ${start.toISOString()} AND first_published_at <= ${end.toISOString()}`
+        }
       }
 
       // Paper-only clusters sort AFTER news clusters (not just below in the UI):

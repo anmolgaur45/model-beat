@@ -125,8 +125,8 @@ def _create_cluster(
     with conn.cursor() as cur:
         cur.execute(
             """
-            INSERT INTO clusters (id, headline, category, significance_score, first_published_at, last_activity_at, article_count)
-            VALUES (%s, %s, %s, 0, %s, %s, 0)
+            INSERT INTO clusters (id, headline, category, significance_score, first_published_at, peak_date, article_count)
+            VALUES (%s, %s, %s, 0, %s, %s::date, 0)
             """,
             (cluster_id, headline, category, published_at, published_at),
         )
@@ -182,13 +182,19 @@ def _assign_articles(conn: psycopg.Connection, article_ids: list[str], cluster_i
             "UPDATE articles SET cluster_id = %s WHERE id = ANY(%s)",
             (cluster_id, article_ids),
         )
-        # Keep article_count, first_published_at (MIN), last_activity_at (MAX) in sync
+        # Keep article_count, first_published_at (MIN = when it broke), and
+        # peak_date (the calendar day with the most coverage = timeline placement;
+        # ties -> earliest day) in sync.
         cur.execute(
             """
             UPDATE clusters c SET
                 article_count     = (SELECT COUNT(*) FROM articles a WHERE a.cluster_id = c.id),
                 first_published_at = (SELECT MIN(published_at) FROM articles a WHERE a.cluster_id = c.id),
-                last_activity_at   = (SELECT MAX(published_at) FROM articles a WHERE a.cluster_id = c.id)
+                peak_date = (
+                    SELECT a.published_at::date FROM articles a WHERE a.cluster_id = c.id
+                    GROUP BY a.published_at::date
+                    ORDER BY count(*) DESC, a.published_at::date ASC LIMIT 1
+                )
             WHERE c.id = %s
             """,
             (cluster_id,),
@@ -449,7 +455,11 @@ def merge_close_clusters(
                 UPDATE clusters c SET
                     article_count      = (SELECT COUNT(*) FROM articles a WHERE a.cluster_id = c.id),
                     first_published_at = (SELECT MIN(published_at) FROM articles a WHERE a.cluster_id = c.id),
-                    last_activity_at   = (SELECT MAX(published_at) FROM articles a WHERE a.cluster_id = c.id)
+                    peak_date = (
+                        SELECT a.published_at::date FROM articles a WHERE a.cluster_id = c.id
+                        GROUP BY a.published_at::date
+                        ORDER BY count(*) DESC, a.published_at::date ASC LIMIT 1
+                    )
                 WHERE c.id = %s
                 """,
                 (canonical,),

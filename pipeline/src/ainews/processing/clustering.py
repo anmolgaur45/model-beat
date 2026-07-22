@@ -125,10 +125,10 @@ def _create_cluster(
     with conn.cursor() as cur:
         cur.execute(
             """
-            INSERT INTO clusters (id, headline, category, significance_score, first_published_at, article_count)
-            VALUES (%s, %s, %s, 0, %s, 0)
+            INSERT INTO clusters (id, headline, category, significance_score, first_published_at, last_activity_at, article_count)
+            VALUES (%s, %s, %s, 0, %s, %s, 0)
             """,
-            (cluster_id, headline, category, published_at),
+            (cluster_id, headline, category, published_at, published_at),
         )
     return cluster_id
 
@@ -182,12 +182,13 @@ def _assign_articles(conn: psycopg.Connection, article_ids: list[str], cluster_i
             "UPDATE articles SET cluster_id = %s WHERE id = ANY(%s)",
             (cluster_id, article_ids),
         )
-        # Keep article_count and first_published_at in sync
+        # Keep article_count, first_published_at (MIN), last_activity_at (MAX) in sync
         cur.execute(
             """
             UPDATE clusters c SET
                 article_count     = (SELECT COUNT(*) FROM articles a WHERE a.cluster_id = c.id),
-                first_published_at = (SELECT MIN(published_at) FROM articles a WHERE a.cluster_id = c.id)
+                first_published_at = (SELECT MIN(published_at) FROM articles a WHERE a.cluster_id = c.id),
+                last_activity_at   = (SELECT MAX(published_at) FROM articles a WHERE a.cluster_id = c.id)
             WHERE c.id = %s
             """,
             (cluster_id,),
@@ -447,7 +448,8 @@ def merge_close_clusters(
                 """
                 UPDATE clusters c SET
                     article_count      = (SELECT COUNT(*) FROM articles a WHERE a.cluster_id = c.id),
-                    first_published_at = (SELECT MIN(published_at) FROM articles a WHERE a.cluster_id = c.id)
+                    first_published_at = (SELECT MIN(published_at) FROM articles a WHERE a.cluster_id = c.id),
+                    last_activity_at   = (SELECT MAX(published_at) FROM articles a WHERE a.cluster_id = c.id)
                 WHERE c.id = %s
                 """,
                 (canonical,),

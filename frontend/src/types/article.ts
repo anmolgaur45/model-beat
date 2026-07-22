@@ -28,7 +28,8 @@ export interface Cluster {
   headline: string
   category: Category
   significance_score: number
-  first_published_at: string // ISO timestamp
+  first_published_at: string // ISO timestamp (when the story first broke)
+  last_activity_at?: string // ISO timestamp (newest member article; timeline grouping)
   article_count: number
   summary: string | null // AI synthesis (Phase J); null when not yet generated
   created_at: string

@@ -31,7 +31,10 @@ jobs:
 
           headers="$(curl -fsSI "$URL")"
           code="$(printf '%s' "$headers" | head -1)"
-          age="$(printf '%s' "$headers" | grep -i '^age:' | tr -d '\r' | awk '{print $2}')"
+          # awk (not grep) so a MISSING Age header — which means the page was just
+          # regenerated, i.e. FRESH — yields empty->0, never a non-zero exit that
+          # set -e would turn into a false "stale" alarm.
+          age="$(printf '%s' "$headers" | awk 'tolower($0) ~ /^age:/ {print $2}' | tr -d '\r')"
           age="${age:-0}"
 
           echo "URL:    $URL"

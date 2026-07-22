@@ -1,8 +1,44 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { revalidatePath } from 'next/cache'
 import sql from '@/lib/db'
+import { SITE_URL } from '@/lib/site'
 
 export const maxDuration = 60
+
+// IndexNow: instant submit of changed URLs to Bing (and, via Bing's index,
+// DuckDuckGo + Ecosia + Yandex). Analytics 2026-07-23 showed a 2-day-old model
+// page (Laguna S 2.1) catching the entire launch-day search spike because we
+// were one of the few pages that existed for the query — pinging new pages the
+// moment they change shortens Bing's discovery lag from days to hours, which is
+// where that spike lives. Google ignores IndexNow (no-op for it), which is fine.
+// Key is intentionally public: it's served at /<key>.txt to prove domain control.
+const INDEXNOW_KEY = '9ea3f5f116df688bc7d57e7137d1fca2'
+
+async function pingIndexNow(paths: string[]) {
+  // Only the production apex has the key file; skip previews/local.
+  if (SITE_URL !== 'https://themodelbeat.com') return
+  const host = 'themodelbeat.com'
+  // Sitemap is crawled directly by Bing; IndexNow wants content URLs only.
+  const urlList = paths
+    .filter((p) => p !== '/sitemap.xml')
+    .map((p) => `${SITE_URL}${p}`)
+  if (urlList.length === 0) return
+  try {
+    await fetch('https://api.indexnow.org/indexnow', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        host,
+        key: INDEXNOW_KEY,
+        keyLocation: `${SITE_URL}/${INDEXNOW_KEY}.txt`,
+        urlList,
+      }),
+      signal: AbortSignal.timeout(10_000),
+    })
+  } catch {
+    // A submission failure must never affect revalidation or the response.
+  }
+}
 
 // Targeted revalidation (durable freshness, 2026-07-22). The pipeline calls this
 // after each run instead of triggering a full-site rebuild via the deploy hook.
@@ -61,6 +97,8 @@ export async function POST(req: NextRequest) {
   } catch {
     // A DB blip here must not fail the aggregate revalidations above.
   }
+
+  await pingIndexNow(done)
 
   return NextResponse.json({ revalidated: done.length, paths: done, at: now.toISOString() })
 }

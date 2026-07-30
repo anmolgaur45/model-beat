@@ -30,6 +30,18 @@ ainews = "ainews.main:main"
 target-version = "py312"
 line-length = 100
 
+# Pin the rule set explicitly. With no `select`, ruff applies built-in defaults
+# that CHANGE between releases: `ruff>=0.8` floats, CI picked up 0.16.0 on
+# 2026-07-30, its widened defaults flagged 91 pre-existing lines in files nobody
+# had touched, and that failed the Lint step and skipped the deploy of an
+# unrelated fix. These four are ruff's classic defaults and the contract this
+# code was written against, so linting is now reproducible across versions.
+# E402 stays OFF deliberately: the pipeline uses mid-file and lazy imports on
+# purpose (torch, google.genai) so the package imports cleanly where optional
+# deps are missing, and scripts/ import after sys.path setup.
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]
+
 [build-system]
 requires = ["setuptools>=75.0"]
 build-backend = "setuptools.build_meta"

@@ -496,11 +496,23 @@ def parse_endpoints(data: dict, author: str) -> dict:
         if price_in is None:
             continue
         status = e.get("status")
+        price_out = _price_per_million(pricing.get("completion"))
+        discount = pricing.get("discount") or 0
+        # A promo is NOT a list-price change. OpenRouter states the campaign in
+        # `pricing.discount` (0.5 during OpenAI's Jul 2026 "GPT-5.6 Terra and Luna
+        # 50% off") and quotes the ALREADY-DISCOUNTED price, so the raw number is a
+        # temporary sale price. Recover the list price by dividing it back out.
+        # The floor set drops discounted rows outright, but the vendor row cannot:
+        # when a promo covers every first-party endpoint, filtering would blank
+        # vendor pricing entirely and emit a bogus "price removed" event.
+        factor = 1.0 - float(discount) if 0 < float(discount) < 1 else 1.0
         rows.append({
             "provider": e.get("provider_name"),
             "price_in": price_in,
-            "price_out": _price_per_million(pricing.get("completion")),
-            "discount": pricing.get("discount") or 0,
+            "price_out": price_out,
+            "list_in": price_in / factor,
+            "list_out": price_out / factor if price_out is not None else None,
+            "discount": discount,
             "quant": (e.get("quantization") or "").strip() or None,
             "context": e.get("context_length") or None,
             "healthy": not isinstance(status, (int, float)) or status >= 0,
@@ -516,8 +528,9 @@ def parse_endpoints(data: dict, author: str) -> dict:
 
     vendor_rows = [r for r in rows if provider_matches_author(r["provider"], author)]
     if vendor_rows:
-        v = max(vendor_rows, key=lambda r: r["price_in"])
-        out["vendor_price_in"], out["vendor_price_out"] = v["price_in"], v["price_out"]
+        # Compare and report LIST prices so a promo never reads as a list-price cut.
+        v = max(vendor_rows, key=lambda r: r["list_in"])
+        out["vendor_price_in"], out["vendor_price_out"] = v["list_in"], v["list_out"]
 
     native_context = max((r["context"] for r in rows if r["context"]), default=None)
     credible = [

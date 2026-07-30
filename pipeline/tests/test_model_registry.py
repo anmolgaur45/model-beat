@@ -575,9 +575,25 @@ def test_parse_endpoints_vendor_ignores_status_and_drops_service_tiers():
 def test_parse_endpoints_all_rows_discounted_leaves_floor_none():
     # Seen live on Qwen: the only provider is the (aliased) vendor running a
     # standing discount, so there is no credible floor but there IS a vendor price.
+    # The vendor price is the LIST price, recovered by dividing the discount back
+    # out (0.325 / (1 - 0.35) = 0.5), because a discount is not a list-price change.
     out = parse_endpoints({"endpoints": [_ep("Alibaba", 0.325, 1.95, discount=0.35)]}, "qwen")
-    assert out["vendor_price_in"] == 0.325
+    assert out["vendor_price_in"] == 0.5
+    assert out["vendor_price_out"] == 3.0
     assert out["floor_price_in"] is None and out["floor_provider"] is None
+
+
+def test_parse_endpoints_promo_does_not_read_as_list_price_cut():
+    # Regression, 2026-07-30: OpenRouter ran "GPT-5.6 Terra and Luna 50% off for a
+    # limited time" and quoted the discounted price with pricing.discount = 0.5.
+    # The old code copied that straight into vendor_price_*, which emitted
+    # vendor-scope "list price cut 50%" events and nearly shipped a digest lead
+    # story claiming OpenAI had halved its prices. OpenAI's own page never moved.
+    # Luna's true list is $1/$6; the promo quote is $0.50/$3.
+    out = parse_endpoints({"endpoints": [_ep("OpenAI", 0.5, 3.0, discount=0.5)]}, "openai")
+    assert out["vendor_price_in"] == 1.0 and out["vendor_price_out"] == 6.0
+    # And the promo row is still not a credible floor.
+    assert out["floor_price_in"] is None
 
 
 def test_parse_endpoints_unknown_quant_passes_and_empty_is_safe():

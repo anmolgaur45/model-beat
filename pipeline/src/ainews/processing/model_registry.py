@@ -528,8 +528,23 @@ def parse_endpoints(data: dict, author: str) -> dict:
 
     vendor_rows = [r for r in rows if provider_matches_author(r["provider"], author)]
     if vendor_rows:
-        # Compare and report LIST prices so a promo never reads as a list-price cut.
-        v = max(vendor_rows, key=lambda r: r["list_in"])
+        # Report LIST prices (so a promo never reads as a list-price cut) at the MODAL
+        # rate, tie-broken to the higher price. A vendor usually serves its real list
+        # price from several endpoints at once (Vertex global AND AI Studio), so the
+        # mode is the rate; a lone differently-priced row is a variant, not a reprice.
+        # Taking max() here was wrong: on 2026-08-10 Google added `google-vertex/us`
+        # at exactly +10% over global and max() promoted that regional row to "the list
+        # price", emitting false "+10% list price raise" events on three Gemini models.
+        # Service-tier tags (flex/priority/batch) are dropped by _SERVICE_TIER_RE above;
+        # REGION tags are not, and should not be, so the mode is what protects us.
+        # Tie-break to the higher price keeps the original belt-and-braces against a
+        # lone unlabelled discount row.
+        prices = [r["list_in"] for r in vendor_rows]
+        modal_in = max(set(prices), key=lambda p: (prices.count(p), p))
+        v = max(
+            (r for r in vendor_rows if r["list_in"] == modal_in),
+            key=lambda r: r["list_out"] or 0.0,
+        )
         out["vendor_price_in"], out["vendor_price_out"] = v["list_in"], v["list_out"]
 
     native_context = max((r["context"] for r in rows if r["context"]), default=None)
@@ -664,16 +679,24 @@ def benchmark_change_event(
 
     First attachment is not a change. A source change (aa -> epoch adoption) is a
     methodology change, not the model moving, so it never fires. Pure and testable.
+
+    Wording is deliberately about the SCORE, never the model. A published model is a
+    frozen artifact and cannot get better, so "improved" was a false claim: when a
+    source re-runs its suite, every score moves at once (Artificial Analysis re-scored
+    HLE + SciCode on 2026-08-06 and 72 models "improved" the same day; APEX did the
+    same on 2026-07-30). "reported ... score rose/fell" is true whatever the cause.
+    Bulk re-scores are framed as one revision line in the digest, not N per-model
+    moves; see step 9 of the digest runbook.
     """
     if old is None or old <= 0 or (old_source or "epoch") != (new_source or "epoch"):
         return None
     rel = (new - old) / old
     if abs(rel) < _PRICE_EVENT_MIN_REL:
         return None
-    verb = "improved" if new > old else "dropped"
+    verb = "rose" if new > old else "fell"
     return {
         "event_type": "benchmark",
-        "summary": (f"{name}: {benchmark} {verb} from {_fmt_score(old, unit)} "
+        "summary": (f"{name}: reported {benchmark} score {verb} from {_fmt_score(old, unit)} "
                     f"to {_fmt_score(new, unit)} ({rel:+.0%})"),
         "old_value": f"{old:g}",
         "new_value": f"{new:g}",

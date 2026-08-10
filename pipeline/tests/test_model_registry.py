@@ -583,6 +583,45 @@ def test_parse_endpoints_all_rows_discounted_leaves_floor_none():
     assert out["floor_price_in"] is None and out["floor_provider"] is None
 
 
+def test_parse_endpoints_regional_endpoint_is_not_a_price_raise():
+    # Regression, 2026-08-10: Google added `google-vertex/us` at exactly +10% over the
+    # global rate. max() promoted that lone regional row to "the list price" and emitted
+    # false "+10% vendor list price raise" events on three Gemini models. The real list
+    # price is the MODAL one, served from both Vertex global and AI Studio.
+    data = {"endpoints": [
+        _ep("Google", 1.5, 9.0, tag="google-vertex/global"),
+        _ep("Google AI Studio", 1.5, 9.0, tag="google-ai-studio"),
+        _ep("Google", 1.65, 9.9, tag="google-vertex/us"),
+        _ep("Google", 2.7, 16.2, tag="google-vertex/global/priority"),
+        _ep("Google", 0.75, 4.5, tag="google-vertex/global/flex"),
+    ]}
+    out = parse_endpoints(data, "google")
+    assert out["vendor_price_in"] == 1.5 and out["vendor_price_out"] == 9.0
+
+
+def test_parse_endpoints_lone_cheap_row_still_loses_to_the_modal_rate():
+    # The mode must not reopen the hole max() was guarding: a single unlabelled cheap
+    # row is not the list price either. Two rows at 2.0 beat one at 1.0.
+    data = {"endpoints": [
+        _ep("OpenAI", 2.0, 8.0, tag="openai"),
+        _ep("OpenAI", 2.0, 8.0, tag="openai/eu"),
+        _ep("OpenAI", 1.0, 4.0, tag="openai/mystery"),
+    ]}
+    out = parse_endpoints(data, "openai")
+    assert out["vendor_price_in"] == 2.0
+
+
+def test_benchmark_event_describes_the_score_not_the_model():
+    # A frozen model cannot "improve"; when a source re-runs its suite every score moves
+    # at once (AA re-scored HLE for 72 models on 2026-08-06). Wording must stay true
+    # whatever the cause.
+    ev = benchmark_change_event("GLM-4.7", "APEX", 3.1, 8.7, "%", "aa", "aa")
+    assert "improved" not in ev["summary"]
+    assert "reported APEX score rose" in ev["summary"]
+    down = benchmark_change_event("GLM-4.7", "APEX", 8.7, 3.1, "%", "aa", "aa")
+    assert "reported APEX score fell" in down["summary"]
+
+
 def test_parse_endpoints_promo_does_not_read_as_list_price_cut():
     # Regression, 2026-07-30: OpenRouter ran "GPT-5.6 Terra and Luna 50% off for a
     # limited time" and quoted the discounted price with pricing.discount = 0.5.
@@ -684,7 +723,7 @@ def test_endpoint_change_floor_disappearing_keeps_last_known():
 def test_benchmark_change_event_fires_on_meaningful_move():
     ev = benchmark_change_event("GLM-5.2", "SWE-bench Verified", 0.682, 0.741, "%", "epoch", "epoch")
     assert ev["event_type"] == "benchmark"
-    assert "68.2%" in ev["summary"] and "74.1%" in ev["summary"] and "improved" in ev["summary"]
+    assert "68.2%" in ev["summary"] and "74.1%" in ev["summary"] and "score rose" in ev["summary"]
     assert ev["old_value"] == "0.682" and ev["new_value"] == "0.741"
 
 
@@ -701,7 +740,7 @@ def test_benchmark_change_event_source_change_is_not_a_move():
 
 def test_benchmark_change_event_index_unit_and_drop():
     ev = benchmark_change_event("M", "Epoch Capabilities Index", 150.0, 140.0, "index", "epoch", "epoch")
-    assert "dropped" in ev["summary"] and "150" in ev["summary"] and "140" in ev["summary"]
+    assert "score fell" in ev["summary"] and "150" in ev["summary"] and "140" in ev["summary"]
 
 
 def test_endpoint_change_reverted_candidate_clears_pending():

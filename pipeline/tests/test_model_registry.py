@@ -599,6 +599,19 @@ def test_parse_endpoints_regional_endpoint_is_not_a_price_raise():
     assert out["vendor_price_in"] == 1.5 and out["vendor_price_out"] == 9.0
 
 
+def test_parse_endpoints_highspeed_tier_is_not_a_price_rise():
+    # Regression, 2026-08-12: MiniMax serves `minimax/highspeed` at $0.30/$2.40 beside the
+    # standard `minimax/fp8` at $0.30/$1.20. Inputs tie at $0.30, so the modal tie-break
+    # (highest output) picked the highspeed row and emitted a false "+100% output raise".
+    # `highspeed` is a service tier like flex/priority and must be filtered out entirely.
+    data = {"endpoints": [
+        _ep("Minimax", 0.30, 1.20, tag="minimax/fp8"),
+        _ep("Minimax", 0.30, 2.40, tag="minimax/highspeed"),
+    ]}
+    out = parse_endpoints(data, "minimax")
+    assert out["vendor_price_in"] == 0.30 and out["vendor_price_out"] == 1.20
+
+
 def test_parse_endpoints_lone_cheap_row_still_loses_to_the_modal_rate():
     # The mode must not reopen the hole max() was guarding: a single unlabelled cheap
     # row is not the list price either. Two rows at 2.0 beat one at 1.0.

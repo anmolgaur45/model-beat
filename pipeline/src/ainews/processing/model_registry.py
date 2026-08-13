@@ -440,7 +440,14 @@ _LOW_QUANT_RE = re.compile(r"^(?:fp|int)[1-7]$", re.IGNORECASE)
 # the same model at off-list prices for a different latency contract. They are
 # neither the list price nor a comparable floor, so they are dropped entirely.
 # Quant tag suffixes (`novita/fp8`) don't match this.
-_SERVICE_TIER_RE = re.compile(r"/(?:flex|priority|batch|off-?peak|turbo)$", re.IGNORECASE)
+# Service tiers are speed/cost variants of the SAME model, never its list price, so
+# they are dropped before any price is derived. Keep this list current: an unlisted
+# tier survives the filter and can be picked as "the list price". MiniMax's
+# `minimax/highspeed` ($0.30/$2.40 beside the standard $0.30/$1.20) slipped through on
+# 2026-08-12 and read as a +100% output price rise.
+_SERVICE_TIER_RE = re.compile(
+    r"/(?:flex|priority|batch|off-?peak|turbo|high-?speed|fast)$", re.IGNORECASE
+)
 
 # First-party brands whose OpenRouter author slug differs from the provider's
 # company name ('qwen/...' models are served first-party by 'Alibaba').

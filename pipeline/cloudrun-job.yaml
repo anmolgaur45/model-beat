@@ -84,8 +84,14 @@ spec:
                   value: "5432"
                 - name: DATABASE_NAME
                   value: "ainews"
+                # Dedicated role so frontend traffic cannot starve the pipeline.
+                # ainews_app (Vercel) is capped at 40 of the 47 usable slots;
+                # ainews_pipeline has its own limit of 5, which the cap does not
+                # apply to, so a crawler burst on /story/* can no longer lock the
+                # job out (it did on 2026-08-13, twice). Member of ainews_app, so
+                # it inherits every table privilege and shares its password.
                 - name: DATABASE_USER
-                  value: "ainews_app"
+                  value: "ainews_pipeline"
                 - name: DATABASE_PASSWORD
                   valueFrom:
                     secretKeyRef:

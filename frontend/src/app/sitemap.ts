@@ -6,6 +6,7 @@ import { comparePairs } from '@/lib/comparePairs'
 import { BEST_VIEWS } from '@/lib/bestModels'
 import { storyPath } from '@/lib/story'
 import { listIssues } from '@/lib/digestIssues'
+import { substantiveDays } from '@/lib/days'
 
 // ISR, 1h. Without this the DB-backed sitemap bakes at build and the CDN serves
 // that copy for ~a day (revalidatePath does not reliably purge metadata routes),
@@ -20,17 +21,7 @@ export const revalidate = 3600
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // Substantive, recent days only (>=3 stories within ~1y) — matches the day
   // pages' index gate, so the sitemap never lists noindexed thin/backdated days.
-  const rows = await sql<{ day: string; last: string }[]>`
-    SELECT to_char(first_published_at AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS day,
-           max(created_at) AS last
-    FROM clusters c
-    WHERE first_published_at >= now() - interval '370 days'
-      AND EXISTS (SELECT 1 FROM articles a
-                  WHERE a.cluster_id = c.id AND a.source_name NOT LIKE 'arXiv%')
-    GROUP BY day
-    HAVING count(*) >= 3
-    ORDER BY day DESC
-  `
+  const rows = await substantiveDays()
 
   const days: MetadataRoute.Sitemap = rows.map((r) => ({
     url: `${SITE}/day/${r.day}`,

@@ -39,6 +39,15 @@ CREATE INDEX IF NOT EXISTS idx_articles_cluster_id   ON articles (cluster_id);
 CREATE INDEX IF NOT EXISTS idx_clusters_published_at ON clusters (first_published_at DESC);
 CREATE INDEX IF NOT EXISTS idx_clusters_peak_date ON clusters (peak_date DESC);
 CREATE INDEX IF NOT EXISTS idx_clusters_category     ON clusters (category);
+-- "Does this cluster have real (non-arXiv) coverage?" drives the day pages'
+-- index gate, the prev/next archive chain and the sitemap. Without this the
+-- per-cluster EXISTS probe reads the ~318 MB articles heap; with it the probe is
+-- an index-only scan (2026-08-27). Deliberately partial: only ~27k of 62k rows
+-- qualify, so the index is <1 MB. NOTE the planner correctly ignores it for the
+-- bulk 370-day aggregate, where a seq scan is genuinely cheaper; it earns its
+-- place on the single-day query shape.
+CREATE INDEX IF NOT EXISTS idx_articles_cluster_non_arxiv
+  ON articles (cluster_id) WHERE source_name NOT LIKE 'arXiv%';
 -- Add significance_base to articles for use during clustering (Phase 2)
 ALTER TABLE articles ADD COLUMN IF NOT EXISTS significance_base FLOAT DEFAULT 0;
 -- HNSW index on article embeddings for fast approximate nearest-neighbor search

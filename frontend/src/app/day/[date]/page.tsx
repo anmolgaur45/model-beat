@@ -5,7 +5,11 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { appRouter } from '@/server/routers/_app'
 import { createContext } from '@/server/trpc'
-import sql from '@/lib/db'
+import {
+  DAY_INDEX_MIN_STORIES,
+  adjacentDays,
+  recentSubstantiveDays,
+} from '@/lib/days'
 import { FeatureCard } from '@/components/FeatureCard'
 import { StoryCard } from '@/components/StoryCard'
 import { NavBar } from '@/components/NavBar'
@@ -27,16 +31,8 @@ const TOP_STORY_MIN = 6
 // demand (still indexable); thin/backdated days and a brand-new day between
 // deploys likewise render on demand and cache.
 export async function generateStaticParams() {
-  const rows = await sql<{ day: string }[]>`
-    SELECT to_char(first_published_at AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS day
-    FROM clusters c
-    WHERE first_published_at >= now() - interval '45 days'
-      AND EXISTS (SELECT 1 FROM articles a
-                  WHERE a.cluster_id = c.id AND a.source_name NOT LIKE 'arXiv%')
-    GROUP BY day
-    HAVING count(*) >= 3
-  `
-  return rows.map((r) => ({ date: r.day }))
+  const days = await recentSubstantiveDays(45)
+  return days.map((day) => ({ date: day }))
 }
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
@@ -83,30 +79,11 @@ function navLabel(day: string): string {
 // backdated days (arXiv carries original publication dates back to 2015) are
 // noindexed so a long tail of one-story pages doesn't dilute the site. The
 // archive, sitemap and prev/next chain use the same bar.
-const DAY_INDEX_MIN_STORIES = 3
 function isIndexableDay(date: string, storyCount: number): boolean {
   if (storyCount < DAY_INDEX_MIN_STORIES) return false
   const ageDays = (Date.now() - new Date(date + 'T00:00:00Z').getTime()) / 86_400_000
   return ageDays <= 370
 }
-
-// Nearest substantive days on either side — the crawlable archive chain.
-const adjacentDays = cache(async (date: string) => {
-  const [row] = await sql<{ prev: string | null; next: string | null }[]>`
-    WITH substantive AS (
-      SELECT to_char(first_published_at AT TIME ZONE 'UTC','YYYY-MM-DD') AS d
-      FROM clusters c
-      WHERE first_published_at >= now() - interval '370 days'
-        AND EXISTS (SELECT 1 FROM articles a
-                    WHERE a.cluster_id = c.id AND a.source_name NOT LIKE 'arXiv%')
-      GROUP BY 1 HAVING count(*) >= ${DAY_INDEX_MIN_STORIES}
-    )
-    SELECT
-      (SELECT max(d) FROM substantive WHERE d < ${date}) AS prev,
-      (SELECT min(d) FROM substantive WHERE d > ${date}) AS next
-  `
-  return row ?? { prev: null, next: null }
-})
 
 export async function generateMetadata({
   params,

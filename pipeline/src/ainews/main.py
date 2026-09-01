@@ -9,7 +9,7 @@ from .sources import RSS_SOURCES
 from .ingestors.rss import ingest_rss
 from .ingestors.hackernews import ingest_hn
 from .ingestors.github import ingest_github
-from .processing.embeddings import embed_pending
+from .processing.embeddings import embed_pending, prune_old_embeddings
 from .processing.scoring import score_pending
 from .processing.clustering import cluster_pending
 from .processing.summarize import summarize_pending
@@ -219,6 +219,10 @@ def main() -> None:
 
         summarized = summarize_pending(conn)
         log.info("pipeline.summarized", count=summarized)
+
+        # Runs AFTER clustering so this run's articles are already placed.
+        pruned = prune_old_embeddings(conn)
+        log.info("pipeline.embeddings_pruned", count=pruned)
 
         # Model registry (Phase K) — Epoch AI sync + news linkage. Fault-isolated:
         # an Epoch outage or schema change must not fail the run.

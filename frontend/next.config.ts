@@ -60,6 +60,35 @@ const nextConfig: NextConfig = {
         source: '/(.*)',
         headers: securityHeaders,
       },
+      {
+        // Story pages are `force-dynamic`, so every hit ran a DB-backed render.
+        // Measured 2026-09-01: crawlers were driving 65-90 req/min, 90-98% of it
+        // /story/*, and re-fetching the SAME page ~4-6 times within minutes (249
+        // requests across 60 distinct stories in one sample). That is what kept
+        // exhausting Cloud SQL's connection ceiling.
+        //
+        // `Vercel-CDN-Cache-Control` is deliberate, not `Cache-Control`: it is the
+        // ONLY one of the three that outranks the `private, no-store` header
+        // force-dynamic returns from the function, and it applies to Vercel's CDN
+        // alone, so browsers still receive no-store and see a fresh render.
+        //
+        // This is the CDN cache, NOT ISR. It costs zero ISR writes, so the 200k
+        // Hobby budget that paused the project in July is untouched and the
+        // zero-ISR architecture still holds. Pages stay dynamic; repeat hits
+        // within the window simply never reach the function.
+        //
+        // 300s is chosen against the pipeline's 3h cadence: a story can only
+        // change when a run re-clusters or re-summarises it, so 5 minutes of
+        // staleness is invisible while still collapsing every crawler burst.
+        // stale-if-error keeps stories served through a DB outage.
+        source: '/story/:path*',
+        headers: [
+          {
+            key: 'Vercel-CDN-Cache-Control',
+            value: 'max-age=300, stale-while-revalidate=1800, stale-if-error=86400',
+          },
+        ],
+      },
     ]
   },
 };

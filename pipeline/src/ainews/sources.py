@@ -154,7 +154,7 @@ GITHUB_REPOS: list[tuple[str, str]] = [
     ("ollama", "ollama"),
     ("ggml-org", "llama.cpp"),
     ("deepseek-ai", "DeepSeek-V3"),
-    ("QwenLM", "Qwen2.5"),
+    ("QwenLM", "Qwen3"),
     ("cohere-ai", "cohere-toolkit"),
 ]
 

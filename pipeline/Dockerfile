@@ -25,6 +25,12 @@ COPY src/ src/
 # Pre-bake sentence-transformer model so Cloud Run startup is instant
 RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')"
 
+# Serve that baked copy without revalidating it against the Hub. Set AFTER the
+# pre-bake so the build itself can still download. The runtime HEAD requests are
+# unauthenticated, and HF 429'd one on 2026-09-10: it cost a 27s retry that run
+# and would have failed the embedding step outright after 5 of them.
+ENV HF_HUB_OFFLINE=1
+
 RUN chown -R ainews:ainews /app
 
 USER ainews

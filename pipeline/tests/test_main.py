@@ -1,5 +1,8 @@
 from datetime import datetime, timedelta, timezone
 
+import psycopg
+
+import ainews.main as m
 from ainews.main import cap_new_articles, dedup_by_title, dedup_by_url
 from ainews.models import NormalizedArticle
 
@@ -95,3 +98,67 @@ def test_cap_zero_limit_is_noop():
     kept, deferred = cap_new_articles(articles, 0)
     assert kept == articles
     assert deferred == 0
+
+
+# ── record_run must never fail an otherwise-successful run ────────────────────
+# Regression guard for 2026-09-10 21:00 UTC: every content step succeeded, then
+# the long-held connection dropped on the final pipeline_runs write, the job
+# exited 1, and notify_revalidate() never fired, so 17 fresh clusters stayed
+# unpublished for 3h.
+
+
+class _FakeConn:
+    def __init__(self) -> None:
+        self.closed = False
+
+    def rollback(self) -> None:
+        pass
+
+    def close(self) -> None:
+        self.closed = True
+
+
+def _neuter_pipeline(monkeypatch, record_run):
+    """Stub every side-effecting step so only main()'s tail is under test."""
+    conn = _FakeConn()
+    monkeypatch.setattr(m.db, "get_connection", lambda: conn)
+    monkeypatch.setattr(m, "ingest_all", lambda: [])
+    monkeypatch.setattr(m, "filter_existing", lambda *a, **k: [])
+    monkeypatch.setattr(m, "upsert_articles", lambda *a, **k: None)
+    for name in (
+        "embed_pending", "score_pending", "cluster_pending", "summarize_pending",
+        "prune_old_embeddings", "sync_models", "create_missing_models",
+        "sync_benchmarks", "sync_pricing", "sync_endpoint_prices",
+        "sync_aa_benchmarks", "link_model_coverage",
+    ):
+        monkeypatch.setattr(m, name, lambda *a, **k: 0)
+    monkeypatch.setattr(m, "record_run", record_run)
+    revalidated: list[str] = []
+    monkeypatch.setattr(m, "notify_revalidate", lambda: revalidated.append("yes"))
+    return conn, revalidated
+
+
+def _dropped_connection(*a, **k):
+    raise psycopg.OperationalError(
+        "consuming input failed: SSL error: unexpected eof while reading"
+    )
+
+
+def test_record_run_failure_does_not_fail_the_run(monkeypatch):
+    conn, _ = _neuter_pipeline(monkeypatch, _dropped_connection)
+    m.main()  # must not raise: a nonzero exit here pages the owner for nothing
+    assert conn.closed
+
+
+def test_revalidate_still_fires_when_record_run_dies(monkeypatch):
+    _, revalidated = _neuter_pipeline(monkeypatch, _dropped_connection)
+    m.main()
+    assert revalidated == ["yes"]
+
+
+def test_healthy_run_still_records_and_revalidates(monkeypatch):
+    recorded: list[str] = []
+    _, revalidated = _neuter_pipeline(monkeypatch, lambda *a, **k: recorded.append("yes"))
+    m.main()
+    assert recorded == ["yes"]
+    assert revalidated == ["yes"]

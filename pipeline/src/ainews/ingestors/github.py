@@ -84,7 +84,10 @@ _TRANSPORT = httpx.HTTPTransport(retries=3)
 
 def ingest_github() -> list[NormalizedArticle]:
     results: list[NormalizedArticle] = []
-    with httpx.Client(transport=_TRANSPORT) as client:
+    # follow_redirects: GitHub 301s a renamed repo to its /repositories/<id>
+    # URL. Without this a rename kills the source silently, which is what
+    # QwenLM/Qwen2.5 -> Qwen3 did until it was spotted on 2026-09-10.
+    with httpx.Client(transport=_TRANSPORT, follow_redirects=True) as client:
         for owner, repo in GITHUB_REPOS:
             results.extend(_fetch_releases(client, owner, repo))
     log.info("github.ingested", count=len(results))

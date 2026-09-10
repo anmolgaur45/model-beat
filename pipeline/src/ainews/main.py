@@ -260,7 +260,17 @@ def main() -> None:
             priced=priced,
             model_links=linked,
         )
-        record_run(conn, articles_ingested=len(new_articles), clusters_updated=clustered)
+        # The connection has been open for the whole run (link_model_coverage
+        # alone holds it 5-8 min) and Cloud SQL occasionally drops it before
+        # this last write: an SSL EOF here failed the 2026-09-10 21:00 run
+        # outright, and skipped the revalidate below, even though every content
+        # step had already succeeded. The row only feeds the staleness banner's
+        # MAX(ran_at) and the next run is 3h behind it, so losing one costs far
+        # less than leaving 17 fresh clusters unpublished.
+        try:
+            record_run(conn, articles_ingested=len(new_articles), clusters_updated=clustered)
+        except Exception as exc:
+            log.warning("pipeline.record_run_failed", error=str(exc))
         notify_revalidate()
     except Exception as exc:
         log.error("pipeline.failed", error=str(exc))

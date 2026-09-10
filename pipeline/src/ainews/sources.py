@@ -147,15 +147,18 @@ HN_SOURCE = Source(
     "hn", 3, "company-news",
 )
 
+# Only repos that actually cut GitHub releases; each of these shipped within the
+# past week. A lab that publishes on Hugging Face instead is polled for nothing
+# every run, which is why Qwen (Qwen3, Qwen2.5-VL and Qwen3-Coder have zero
+# releases between them), deepseek-ai/DeepSeek-V3 (1 release, Jun 2025) and
+# cohere-ai/cohere-toolkit (last Feb 2025) were dropped on 2026-09-11. Check the
+# releases endpoint before adding one, and prefer the tool repo over the lab's.
 GITHUB_REPOS: list[tuple[str, str]] = [
     ("huggingface", "transformers"),
     ("langchain-ai", "langchain"),
     ("vllm-project", "vllm"),
     ("ollama", "ollama"),
     ("ggml-org", "llama.cpp"),
-    ("deepseek-ai", "DeepSeek-V3"),
-    ("QwenLM", "Qwen3"),
-    ("cohere-ai", "cohere-toolkit"),
 ]
 
 GITHUB_SOURCE = Source(

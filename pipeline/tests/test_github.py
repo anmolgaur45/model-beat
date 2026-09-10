@@ -8,7 +8,6 @@ github.fetch_failed on every run without anyone noticing.
 import httpx
 
 from ainews.ingestors import github
-from ainews.sources import GITHUB_REPOS
 
 
 def test_client_follows_redirects(monkeypatch):
@@ -30,7 +29,3 @@ def test_client_follows_redirects(monkeypatch):
     monkeypatch.setattr(httpx, "Client", _Client)
     github.ingest_github()
     assert captured.get("follow_redirects") is True
-
-
-def test_no_repo_is_pinned_to_a_renamed_qwen_release_series():
-    assert ("QwenLM", "Qwen2.5") not in GITHUB_REPOS

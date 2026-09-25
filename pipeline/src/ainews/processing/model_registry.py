@@ -460,6 +460,61 @@ _VENDOR_ALIASES = {"qwen": "alibaba"}
 _FLOOR_MIN_CONTEXT_FRACTION = 0.5
 
 
+_MINUTES_PER_WEEK = 7 * 24 * 60
+
+
+def _hhmm_minutes(value) -> int:
+    """OpenRouter schedule time (1000 = 10:00 UTC) → minutes past midnight."""
+    v = int(value or 0)
+    return (v // 100) * 60 + v % 100
+
+
+def _scheduled_price(pricing: dict) -> tuple:
+    """(prompt, completion) raw prices that apply for most of the week.
+
+    Some providers price by time of day, and OpenRouter states the schedule in
+    `pricing.overrides` (windows keyed by utc_start/utc_end/utc_days) while the
+    top-level price is only whichever window is active at request time. Reading
+    the top level made DeepSeek, Alibaba and Tencent prices flip with the clock
+    and publish phantom list-price moves (DeepSeek V4 Pro 0813 "+100%",
+    2026-09-18). The time-weighted modal price is stable whenever we sample.
+
+    Overrides carrying `min_prompt_tokens` are long-context tiers, not a
+    schedule, and are ignored: for them the top-level price IS the list price.
+    Ties go to the higher price. Time the schedule leaves uncovered is billed
+    at the top-level price, which is only right when sampled outside every
+    window; all six schedules seen on 2026-09-25 cover the full week.
+    """
+    top = (pricing.get("prompt"), pricing.get("completion"))
+    windows = [
+        o for o in pricing.get("overrides") or []
+        if isinstance(o, dict)
+        and "min_prompt_tokens" not in o
+        and any(k in o for k in ("utc_start", "utc_end", "utc_days"))
+    ]
+    if not windows:
+        return top
+
+    minutes: dict[tuple, int] = {}
+    for o in windows:
+        start, end = _hhmm_minutes(o.get("utc_start")), _hhmm_minutes(o.get("utc_end"))
+        if end <= start:
+            end += 24 * 60  # 1000-0 runs from 10:00 to midnight
+        days = o.get("utc_days")
+        span = (end - start) * (len(days) if isinstance(days, list) and days else 7)
+        key = (o.get("prompt", top[0]), o.get("completion", top[1]))
+        minutes[key] = minutes.get(key, 0) + span
+    uncovered = _MINUTES_PER_WEEK - sum(minutes.values())
+    if uncovered > 0:
+        minutes[top] = minutes.get(top, 0) + uncovered
+
+    def rank(item):
+        (prompt, _), mins = item
+        return mins, _price_per_million(prompt) or 0.0
+
+    return max(minutes.items(), key=rank)[0]
+
+
 def _norm_org(s: str | None) -> str:
     return re.sub(r"[^a-z0-9]", "", (s or "").lower())
 
@@ -500,11 +555,12 @@ def parse_endpoints(data: dict, author: str) -> dict:
         if _SERVICE_TIER_RE.search(e.get("tag") or ""):
             continue
         pricing = e.get("pricing") or {}
-        price_in = _price_per_million(pricing.get("prompt"))
+        prompt, completion = _scheduled_price(pricing)
+        price_in = _price_per_million(prompt)
         if price_in is None:
             continue
         status = e.get("status")
-        price_out = _price_per_million(pricing.get("completion"))
+        price_out = _price_per_million(completion)
         discount = pricing.get("discount") or 0
         # A promo is NOT a list-price change. OpenRouter states the campaign in
         # `pricing.discount` (0.5 during OpenAI's Jul 2026 "GPT-5.6 Terra and Luna

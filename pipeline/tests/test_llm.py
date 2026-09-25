@@ -28,6 +28,20 @@ def test_a_blocked_prompt_is_logged_with_its_reason(monkeypatch):
     assert empty[0]["block_reason"] == "BLOCKLIST"
 
 
+def test_the_shared_client_retries_quota_errors(monkeypatch):
+    # ~10 RESOURCE_EXHAUSTED a week; without retry each cost a summary 3 hours or a
+    # whole run's merge decisions (the adjudicator fails closed).
+    from google import genai
+
+    captured = {}
+    monkeypatch.setattr(genai, "Client", lambda **kw: captured.update(kw) or SimpleNamespace())
+    monkeypatch.setattr(llm, "_client", None)
+    llm.vertex_client()
+    retry = captured["http_options"].retry_options
+    assert 429 in retry.http_status_codes
+    assert retry.attempts >= 2
+
+
 def test_a_normal_response_passes_through_unlogged(monkeypatch):
     monkeypatch.setattr(llm.settings, "vertex_project", "test-project")
     ok = SimpleNamespace(text="[]", candidates=[], prompt_feedback=None)

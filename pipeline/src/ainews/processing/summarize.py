@@ -13,6 +13,7 @@ import psycopg
 import structlog
 
 from ..config import settings
+from .llm import vertex_client
 
 log = structlog.get_logger()
 
@@ -134,14 +135,8 @@ def summarize_pending(conn: psycopg.Connection) -> int:
         log.info("summarize.none_pending")
         return 0
 
-    # Imported lazily so the package imports cleanly where google-genai isn't installed
-    from google import genai
-
-    client = genai.Client(
-        vertexai=True,
-        project=settings.vertex_project,
-        location=settings.vertex_location,
-    )
+    # Shared with scoring and adjudication so every call gets the same retry.
+    client = vertex_client()
 
     total = 0
     failed = 0

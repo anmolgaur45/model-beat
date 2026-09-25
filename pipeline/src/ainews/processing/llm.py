@@ -16,24 +16,43 @@ log = structlog.get_logger()
 
 _client = None
 
+# The global endpoint answers 429 RESOURCE_EXHAUSTED when shared capacity is
+# briefly saturated (~10 a week as of 2026-09-25). With no retry, each one cost a
+# summary three hours or a whole run's merge decisions, since the adjudicator
+# fails closed. Transient statuses now retry with backoff (about 2s then 4s);
+# rejected requests are not billed.
+_RETRY = {
+    "attempts": 3,
+    "initial_delay": 2.0,
+    "max_delay": 10.0,
+    "http_status_codes": [408, 429, 500, 502, 503, 504],
+}
+
+
+def vertex_client():
+    """The pipeline's single Vertex client (lazy, cached), with transient retry."""
+    global _client
+    if _client is None:
+        # Imported lazily so the package imports cleanly where google-genai
+        # isn't installed.
+        from google import genai
+        from google.genai import types
+
+        _client = genai.Client(
+            vertexai=True,
+            project=settings.vertex_project,
+            location=settings.vertex_location,
+            http_options=types.HttpOptions(retry_options=types.HttpRetryOptions(**_RETRY)),
+        )
+    return _client
+
 
 def gemini_text(prompt: str) -> str | None:
     """One Vertex Gemini completion; None when unconfigured or on any error."""
-    global _client
     if not settings.vertex_project:
         return None
     try:
-        if _client is None:
-            # Imported lazily so the package imports cleanly where google-genai
-            # isn't installed (mirrors summarize.py).
-            from google import genai
-
-            _client = genai.Client(
-                vertexai=True,
-                project=settings.vertex_project,
-                location=settings.vertex_location,
-            )
-        response = _client.models.generate_content(
+        response = vertex_client().models.generate_content(
             model=settings.gemini_model,
             contents=prompt,
         )

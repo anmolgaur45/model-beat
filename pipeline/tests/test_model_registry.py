@@ -668,6 +668,89 @@ def test_parse_endpoints_unknown_quant_passes_and_empty_is_safe():
     assert parse_endpoints({}, "y")["floor_price_in"] is None
 
 
+# ── time-of-day schedules (pricing.overrides) ──────────────────────────────────
+# Shapes copied from live /endpoints payloads on 2026-09-25. The top-level price
+# is only whichever window is active when OpenRouter is asked, so reading it made
+# vendor and floor prices flip with the clock: DeepSeek V4 Pro 0813 published a
+# "+100% list price" on 2026-09-18, Tencent Hy3 a -38% then +60% (09-11, 09-15).
+
+_WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday"]
+
+
+def _deepseek_schedule(off_in, off_out, peak_in, peak_out):
+    """DeepSeek's real shape: peak 01-04 and 06-10 UTC on weekdays."""
+    off = {"prompt": str(off_in / 1e6), "completion": str(off_out / 1e6)}
+    peak = {"prompt": str(peak_in / 1e6), "completion": str(peak_out / 1e6)}
+    return [
+        {"utc_days": ["saturday", "sunday"], **off},
+        {"utc_start": 0, "utc_end": 100, "utc_days": _WEEKDAYS, **off},
+        {"utc_start": 100, "utc_end": 400, "utc_days": _WEEKDAYS, **peak},
+        {"utc_start": 400, "utc_end": 600, "utc_days": _WEEKDAYS, **off},
+        {"utc_start": 600, "utc_end": 1000, "utc_days": _WEEKDAYS, **peak},
+        {"utc_start": 1000, "utc_end": 0, "utc_days": _WEEKDAYS, **off},
+    ]
+
+
+def _scheduled_ep(provider, top_in, top_out, overrides, **kw):
+    ep = _ep(provider, top_in, top_out, **kw)
+    ep["pricing"]["overrides"] = overrides
+    return ep
+
+
+def test_scheduled_vendor_price_does_not_depend_on_when_it_is_sampled():
+    schedule = _deepseek_schedule(0.66, 1.98, 1.32, 3.96)
+    at_peak = parse_endpoints(
+        {"endpoints": [_scheduled_ep("DeepSeek", 1.32, 3.96, schedule)]}, "deepseek")
+    off_peak = parse_endpoints(
+        {"endpoints": [_scheduled_ep("DeepSeek", 0.66, 1.98, schedule)]}, "deepseek")
+    # Off-peak covers 133 of the week's 168 hours, so it is the price that applies.
+    assert (at_peak["vendor_price_in"], at_peak["vendor_price_out"]) == (0.66, 1.98)
+    assert (off_peak["vendor_price_in"], off_peak["vendor_price_out"]) == (0.66, 1.98)
+
+
+def test_scheduled_floor_candidate_is_stable_too():
+    # Alibaba serves DeepSeek V4 Pro 0813 at 1.122 until 14:00 UTC, 0.5808 after.
+    # Sampled after 14:00 it briefly became "the cheapest credible provider".
+    schedule = [
+        {"utc_start": 0, "utc_end": 1400, "prompt": "0.000001122", "completion": "0.000003366"},
+        {"utc_start": 1400, "utc_end": 0, "prompt": "0.0000005808", "completion": "0.0000017424"},
+    ]
+    for top_in, top_out in ((1.122, 3.366), (0.5808, 1.7424)):
+        out = parse_endpoints({"endpoints": [
+            _scheduled_ep("Alibaba", top_in, top_out, schedule),
+            _ep("Wafer", 0.9, 3.5),
+        ]}, "deepseek")
+        assert out["floor_provider"] == "Wafer" and out["floor_price_in"] == 0.9
+
+
+def test_hy3_schedule_takes_the_sixteen_hour_rate():
+    schedule = [
+        {"utc_start": 0, "utc_end": 1600, "prompt": "0.000000132", "completion": "0.000000528"},
+        {"utc_start": 1600, "utc_end": 0, "prompt": "0.0000000825", "completion": "0.00000033"},
+    ]
+    out = parse_endpoints(
+        {"endpoints": [_scheduled_ep("Tencent", 0.0825, 0.33, schedule)]}, "tencent")
+    assert (out["vendor_price_in"], out["vendor_price_out"]) == (0.132, 0.528)
+
+
+def test_long_context_tier_overrides_leave_the_list_price_alone():
+    # 142 of 148 endpoints with overrides (OpenAI, xAI, Anthropic, Qwen) use them for
+    # prompts over a size threshold. Those are not a schedule, and treating them as
+    # one would replace every GPT and Grok list price with the long-context rate.
+    tier = [{"min_prompt_tokens": 272000, "prompt": "0.000005", "completion": "0.0000225"}]
+    out = parse_endpoints(
+        {"endpoints": [_scheduled_ep("OpenAI", 2.5, 15.0, tier)]}, "openai")
+    assert (out["vendor_price_in"], out["vendor_price_out"]) == (2.5, 15.0)
+
+
+def test_partial_schedule_bills_uncovered_time_at_the_top_level_price():
+    # Only a 2-hour nightly window is discounted; the other 22 hours are the base.
+    window = [{"utc_start": 200, "utc_end": 400, "prompt": "0.0000005", "completion": "0.000001"}]
+    out = parse_endpoints(
+        {"endpoints": [_scheduled_ep("Acme", 1.0, 2.0, window)]}, "acme")
+    assert (out["vendor_price_in"], out["vendor_price_out"]) == (1.0, 2.0)
+
+
 def _fresh(vin=None, vout=None, fin=None, fout=None, provider=None):
     return {"vendor_price_in": vin, "vendor_price_out": vout,
             "floor_price_in": fin, "floor_price_out": fout,

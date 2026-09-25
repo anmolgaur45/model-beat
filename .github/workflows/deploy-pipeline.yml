@@ -25,7 +25,8 @@ env:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # Pinned: ubuntu-latest moves to Ubuntu 26 on 2026-10-19. Move deliberately.
+    runs-on: ubuntu-24.04
     # config.Settings() instantiates at import; tests never hit the DB, so
     # placeholders just satisfy the required fields during collection
     env:
@@ -57,7 +58,8 @@ jobs:
 
   deploy:
     needs: test
-    runs-on: ubuntu-latest
+    # Pinned: ubuntu-latest moves to Ubuntu 26 on 2026-10-19. Move deliberately.
+    runs-on: ubuntu-24.04
     # Skip on forks / when WIF is not configured yet — keeps CI green pre-setup
     if: vars.WIF_PROVIDER != '' && vars.DEPLOYER_SA != ''
     permissions:

@@ -1,7 +1,9 @@
 import io
+import json
 import zipfile
 from datetime import datetime, timedelta, timezone
 
+from ainews.processing import model_registry
 from ainews.processing.model_registry import (
     normalize_key,
     slugify,
@@ -489,11 +491,13 @@ def test_parse_aa_models_ignores_null_scores():
 
 def test_parse_aa_speed_follows_strongest_variant():
     data = [
-        {"name": "GPT-5.5 (low)", "median_output_tokens_per_second": 120.0,
-         "median_time_to_first_token_seconds": 0.8,
+        {"name": "GPT-5.5 (low)",
+         "performance": {"median_output_tokens_per_second": 120.0,
+                         "median_time_to_first_token_seconds": 0.8},
          "evaluations": {"artificial_analysis_intelligence_index": 40}},
-        {"name": "GPT-5.5 (high)", "median_output_tokens_per_second": 74.1,
-         "median_time_to_first_token_seconds": 2.38,
+        {"name": "GPT-5.5 (high)",
+         "performance": {"median_output_tokens_per_second": 74.1,
+                         "median_time_to_first_token_seconds": 2.38},
          "evaluations": {"artificial_analysis_intelligence_index": 53}},
     ]
     speed = parse_aa_speed(data)
@@ -503,7 +507,7 @@ def test_parse_aa_speed_follows_strongest_variant():
 
 def test_parse_aa_speed_drops_key_when_strongest_variant_lacks_speed():
     data = [
-        {"name": "M (low)", "median_output_tokens_per_second": 200.0,
+        {"name": "M (low)", "performance": {"median_output_tokens_per_second": 200.0},
          "evaluations": {"artificial_analysis_intelligence_index": 30}},
         {"name": "M (high)", "evaluations": {"artificial_analysis_intelligence_index": 60}},
     ]
@@ -512,9 +516,55 @@ def test_parse_aa_speed_drops_key_when_strongest_variant_lacks_speed():
 
 
 def test_parse_aa_speed_keeps_partial_metrics():
-    data = [{"name": "M", "median_output_tokens_per_second": 55.5,
+    data = [{"name": "M", "performance": {"median_output_tokens_per_second": 55.5},
              "evaluations": {}}]
     assert parse_aa_speed(data)[normalize_key("M")] == (55.5, None)
+
+
+# Row shape of the free /api/v2/language/models/free endpoint (2026-09-25).
+_AA_FREE_ROW = {
+    "name": "GLM-4.5V (Non-reasoning)", "slug": "glm-4-5v",
+    "evaluations": {"artificial_analysis_intelligence_index": 6.7,
+                    "artificial_analysis_coding_index": None,
+                    "artificial_analysis_agentic_index": None},
+    "performance": {"median_output_tokens_per_second": 47.71,
+                    "median_time_to_first_token_seconds": 3,
+                    "median_time_to_first_answer_token_seconds": 3,
+                    "median_end_to_end_response_time_seconds": 13.49},
+}
+
+
+def test_free_tier_row_yields_speed_but_no_benchmark_scores():
+    key = normalize_key("GLM-4.5V")
+    assert parse_aa_models([_AA_FREE_ROW]) == {key: {}}
+    assert parse_aa_speed([_AA_FREE_ROW]) == {key: (47.71, 3.0)}
+
+
+def _aa_pages(monkeypatch, pages, fail_on=None):
+    requested = []
+
+    def fake_fetch(url, *, as_bytes, headers=None):
+        page = int(url.rsplit("page=", 1)[1])
+        requested.append(page)
+        if page == fail_on:
+            return None
+        return json.dumps({"data": pages[page - 1],
+                           "pagination": {"page": page, "has_more": page < len(pages)}})
+
+    monkeypatch.setattr(model_registry, "_fetch", fake_fetch)
+    return requested
+
+
+def test_fetch_aa_models_reads_every_page(monkeypatch):
+    requested = _aa_pages(monkeypatch, [[{"name": "A"}, {"name": "B"}], [{"name": "C"}]])
+    assert [m["name"] for m in model_registry._fetch_aa_models()] == ["A", "B", "C"]
+    assert requested == [1, 2]
+
+
+def test_fetch_aa_models_is_all_or_nothing(monkeypatch):
+    # a partial list could pick a weaker variant as a model's representative
+    _aa_pages(monkeypatch, [[{"name": "A"}], [{"name": "B"}]], fail_on=2)
+    assert model_registry._fetch_aa_models() is None
 
 
 # ── Phase U: per-provider endpoint parsing + debounced vendor/floor events ─────

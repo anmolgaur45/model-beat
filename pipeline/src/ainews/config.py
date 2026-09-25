@@ -74,7 +74,10 @@ class Settings(BaseSettings):
     # Artificial Analysis free API (Phase O5): individual benchmark scores for
     # models Epoch hasn't scored yet. Fills gaps only — Epoch stays authoritative.
     # Skipped when the key is unset (CI / unconfigured envs stay green).
-    aa_api_url: str = "https://artificialanalysis.ai/api/v2/data/llms/models"
+    # The legacy /api/v2/data/llms/models path retires 2026-11-04. This free
+    # replacement is paginated and carries only the composite indices, so the
+    # per-benchmark scores stored before the move stay at their last values.
+    aa_api_url: str = "https://artificialanalysis.ai/api/v2/language/models/free"
     aa_api_key: str = ""
 
     revalidate_url: str = ""

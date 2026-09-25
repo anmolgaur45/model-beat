@@ -790,7 +790,7 @@ def aa_base_key(name: str) -> str:
 
 
 def parse_aa_models(data: list[dict]) -> dict[str, dict]:
-    """AA `/data/llms/models` → {base_key: {our_benchmark: (score, unit)}}.
+    """AA models payload → {base_key: {our_benchmark: (score, unit)}}.
 
     Collapses reasoning-effort variants to the strongest (highest AA intelligence
     index), so one representative score per model. Pure and unit-testable.
@@ -817,7 +817,7 @@ def parse_aa_models(data: list[dict]) -> dict[str, dict]:
 
 
 def parse_aa_speed(data: list[dict]) -> dict[str, tuple[float | None, float | None]]:
-    """AA `/data/llms/models` → {base_key: (median tokens/sec, median TTFT s)}.
+    """AA models payload → {base_key: (median tokens/sec, median TTFT s)}.
 
     Same strongest-variant collapse as parse_aa_models, so the speed row
     describes the same representative the benchmark scores do. A strongest
@@ -837,8 +837,9 @@ def parse_aa_speed(data: list[dict]) -> dict[str, tuple[float | None, float | No
         if key in best_ii and ii <= best_ii[key]:
             continue
         best_ii[key] = ii
-        tps = m.get("median_output_tokens_per_second")
-        ttft = m.get("median_time_to_first_token_seconds")
+        perf = m.get("performance") or {}
+        tps = perf.get("median_output_tokens_per_second")
+        ttft = perf.get("median_time_to_first_token_seconds")
         tps_f = float(tps) if isinstance(tps, (int, float)) else None
         ttft_f = float(ttft) if isinstance(ttft, (int, float)) else None
         if tps_f is None and ttft_f is None:
@@ -1446,18 +1447,38 @@ def sync_endpoint_prices(conn: psycopg.Connection) -> int:
     return synced
 
 
+def _fetch_aa_models() -> list[dict] | None:
+    """Every page of AA's models endpoint (200 per page, 4 pages in 2026-09;
+    the free tier allows 100 requests a day). All or nothing: a partial list
+    could collapse a model to a weaker variant than the one it really has."""
+    rows: list[dict] = []
+    for page in range(1, 21):
+        raw = _fetch(f"{settings.aa_api_url}?page={page}", as_bytes=False,
+                     headers={"x-api-key": settings.aa_api_key})
+        if raw is None:
+            return None
+        body = json.loads(raw)
+        rows += body.get("data", [])
+        if not (body.get("pagination") or {}).get("has_more"):
+            break
+    return rows
+
+
 def sync_aa_benchmarks(conn: psycopg.Connection) -> int:
     """Fill benchmark scores from Artificial Analysis's free API for models Epoch
     hasn't scored yet, plus the AA-owned benchmarks (τ²-bench, LiveCodeBench,
     SciCode, MMLU-Pro). Epoch stays authoritative: the source guard never lets AA
-    overwrite an 'epoch' row. Skipped when no key is configured."""
+    overwrite an 'epoch' row. Skipped when no key is configured.
+
+    The free endpoint returns only the composite indices, so the benchmark upsert
+    finds nothing to write and stored AA scores keep their last values; speed
+    history still records."""
     if not settings.aa_api_key:
         return 0
-    raw = _fetch(settings.aa_api_url, as_bytes=False, headers={"x-api-key": settings.aa_api_key})
-    if raw is None:
-        return 0
     try:
-        aa_data = json.loads(raw).get("data", [])
+        aa_data = _fetch_aa_models()
+        if aa_data is None:
+            return 0
         catalog = parse_aa_models(aa_data)
         speed = parse_aa_speed(aa_data)
     except Exception as exc:

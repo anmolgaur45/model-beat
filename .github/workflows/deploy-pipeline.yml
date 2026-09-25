@@ -42,10 +42,13 @@ jobs:
         with:
           python-version: '3.12'
           cache: pip
-          cache-dependency-path: pipeline/pyproject.toml
+          cache-dependency-path: pipeline/requirements.lock
       - name: Install
+        # Test against the exact set the image ships (requirements.lock), not
+        # whatever is newest today. The second install only adds the dev tools:
+        # every runtime dependency is already satisfied by the pins.
         run: |
-          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -r requirements.lock --extra-index-url https://download.pytorch.org/whl/cpu
           pip install -e ".[dev]"
       - name: Lint
         run: ruff check src/ tests/ scripts/

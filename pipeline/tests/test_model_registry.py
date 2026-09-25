@@ -17,6 +17,7 @@ from ainews.processing.model_registry import (
     build_version_alias,
     build_alias_index,
     match_models,
+    _alias_patterns,
     openrouter_key,
     parse_openrouter_models,
     pricing_change_events,
@@ -242,6 +243,19 @@ def test_match_models_collapsed_requires_version_boundary():
     aliases = build_alias_index([("id-1", "Kimi K2"), ("id-2", "Kimi K2.5")])
     assert match_models("Moonshot ships KimiK2.5 update", aliases) == ["id-2"]
     assert match_models("Moonshot's Kimi K2 gains vision", aliases) == ["id-1"]
+
+
+def test_match_models_compiles_each_alias_once():
+    # Rebuilding the patterns per headline made link_model_coverage 76% of every
+    # run (2026-09-25): 674 patterns overflow the re module's 512-entry cache, so
+    # nearly all of them were recompiled for each of ~11k headlines.
+    aliases = build_alias_index([("id-1", "Claude Opus 4.8"), ("id-2", "Gemini 3.5 Flash")])
+    _alias_patterns.cache_clear()
+    for _ in range(5):
+        match_models("Claude Opus 4.8 ships", aliases)
+    info = _alias_patterns.cache_info()
+    assert info.misses == len(aliases)
+    assert info.hits == 4 * len(aliases)
 
 
 # ── ECI roster supplement (models missing from the notable CSV) ────────────────

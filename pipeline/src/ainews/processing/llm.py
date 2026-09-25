@@ -37,7 +37,19 @@ def gemini_text(prompt: str) -> str | None:
             model=settings.gemini_model,
             contents=prompt,
         )
-        return response.text or None
+        if not response.text:
+            # Empty text is not an exception, so it used to vanish without a
+            # trace: 58 of 65 failed scoring batches in one week had no logged
+            # cause. The block reason is what named the culprit on 2026-09-25, a
+            # prompt BLOCKLIST hit on one headline that emptied its whole batch.
+            candidate = (response.candidates or [None])[0]
+            log.warning(
+                "llm.empty_response",
+                block_reason=str(getattr(response.prompt_feedback, "block_reason", None)),
+                finish_reason=str(getattr(candidate, "finish_reason", None)),
+            )
+            return None
+        return response.text
     except Exception as exc:
         log.warning("llm.generate_failed", error=str(exc))
         return None

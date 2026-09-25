@@ -10,14 +10,19 @@ RUN useradd -m -u 1000 ainews
 # Cache model files in a world-readable path
 ENV HF_HOME=/app/.cache/huggingface
 
-# Install CPU-only torch first — separate layer, rarely invalidated
-COPY pyproject.toml .
+# Exact pinned dependency set (see requirements.lock for why). The CPU-only torch
+# wheel lives on the PyTorch index, so it is consulted alongside PyPI. This layer
+# only reinstalls when the lockfile changes.
+COPY pyproject.toml requirements.lock ./
 # Stub src/ so pip can read pyproject.toml metadata; real source overwrites it below
 RUN mkdir -p src/ainews && touch src/ainews/__init__.py
-RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
+RUN pip install --no-cache-dir -r requirements.lock \
+    --extra-index-url https://download.pytorch.org/whl/cpu
 
-# Install remaining deps — editable so Python resolves from /app/src after COPY below
-RUN pip install --no-cache-dir -e .
+# The project itself, editable so Python resolves from /app/src after COPY below.
+# --no-deps: everything is pinned above. --no-build-isolation: build with the
+# pinned setuptools rather than whatever is newest on PyPI at build time.
+RUN pip install --no-cache-dir --no-deps --no-build-isolation -e .
 
 # Copy real source last to maximise dep-layer cache hits
 COPY src/ src/

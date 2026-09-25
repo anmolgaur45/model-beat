@@ -60,6 +60,38 @@ _BACKFILL_MIN = 300
 _BACKFILL_DAYS = 4
 
 
+def _score_singly(conn: psycopg.Connection, batch: list[tuple]) -> int:
+    """Score a failed batch one article at a time; returns how many were scored.
+
+    Gemini refuses a whole prompt when any one headline trips its blocklist, so a
+    single refused article empties the batch it lands in. It then stays NULL, is
+    retried every run, and took the final batch of every run down with it for two
+    months (2026-07-24 -> 09-25). Singly, only the refused article stays NULL.
+
+    Two failures in a row mean the model itself is unavailable (quota, outage),
+    not one bad headline, so stop there rather than multiply calls into it.
+    """
+    scored = 0
+    misses = 0
+    for row in batch:
+        raw = gemini_text(_BATCH_PROMPT.format(articles=_format_articles([row])))
+        if raw is None:
+            misses += 1
+            if misses >= 2:
+                break
+            continue
+        misses = 0
+        score = _parse_batch_response(raw.strip(), [row])[0].get(str(row[0]))
+        if score is None:
+            continue
+        with conn.cursor() as cur:
+            cur.execute("UPDATE articles SET impact_score = %s WHERE id = %s", (score, row[0]))
+        scored += 1
+    conn.commit()
+    log.info("scoring.isolated", scored=scored, of=len(batch))
+    return scored
+
+
 def score_pending(conn: psycopg.Connection, batch_size: int = 10) -> int:
     """Score articles with no impact_score using Vertex Gemini in batches.
 
@@ -71,18 +103,17 @@ def score_pending(conn: psycopg.Connection, batch_size: int = 10) -> int:
 
     from datetime import datetime, timedelta, timezone
     four_days_ago = datetime.now(timezone.utc) - timedelta(days=_BACKFILL_DAYS)
+    # The floor is what enforces the docstring. This used to select the latest
+    # 300 UNSCORED rows at any age, so a refused article from 2026-07-24 was
+    # still being retried two months later. LEAST picks whichever window is
+    # wider: the 300th newest article's date, or four days ago.
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT COUNT(*) FROM articles WHERE impact_score IS NULL AND published_at >= %s",
-            (four_days_ago,),
-        )
-        count_4days = cur.fetchone()[0]
-    limit = max(_BACKFILL_MIN, count_4days)
-
-    with conn.cursor() as cur:
-        cur.execute(
-            "SELECT id, title, body_excerpt, source_name FROM articles WHERE impact_score IS NULL ORDER BY published_at DESC LIMIT %s",
-            (limit,),
+            "SELECT id, title, body_excerpt, source_name FROM articles "
+            "WHERE impact_score IS NULL AND published_at >= LEAST(%s, "
+            "(SELECT published_at FROM articles ORDER BY published_at DESC OFFSET %s LIMIT 1)) "
+            "ORDER BY published_at DESC",
+            (four_days_ago, _BACKFILL_MIN - 1),
         )
         rows = cur.fetchall()
 
@@ -105,6 +136,8 @@ def score_pending(conn: psycopg.Connection, batch_size: int = 10) -> int:
             # could not self-heal. NULL already scores as neutral downstream.
             log.warning("scoring.batch_failed", batch_start=i)
             fallback_batches += 1
+            if len(batch) > 1:
+                total += _score_singly(conn, batch)
             continue
         scores, failed = _parse_batch_response(raw.strip(), batch)
         if failed:

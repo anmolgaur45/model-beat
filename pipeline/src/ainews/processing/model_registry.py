@@ -14,6 +14,7 @@ and returns 0 so the pipeline run still completes. Data is attributed to Epoch A
 """
 
 import csv
+import functools
 import io
 import json
 import re
@@ -874,6 +875,24 @@ def build_alias_index(models: list[tuple[str, str]]) -> dict[str, str]:
     return aliases
 
 
+@functools.lru_cache(maxsize=None)
+def _alias_patterns(alias: str) -> tuple[re.Pattern[str], re.Pattern[str] | None]:
+    """Compile an alias's two match patterns once (keys are the finite alias set).
+
+    Building them per call made link_model_coverage the slowest step of every run
+    (11 of ~14 min on 2026-09-25): 337 aliases need 674 patterns, more than the
+    `re` module's 512-entry cache, so every headline recompiled nearly all of them.
+    """
+    alias_collapsed = re.sub(r"[^a-z0-9]", "", alias)
+    word = re.compile(r"(?<![a-z0-9])" + re.escape(alias) + r"(?![a-z0-9.\-])")
+    collapsed = (
+        re.compile(re.escape(alias_collapsed) + r"(?![0-9])")
+        if len(alias_collapsed) >= 5
+        else None
+    )
+    return word, collapsed
+
+
 def match_models(text: str, aliases: dict[str, str]) -> list[str]:
     """Return model_ids whose name appears in `text` (deterministic, no LLM).
 
@@ -885,14 +904,8 @@ def match_models(text: str, aliases: dict[str, str]) -> list[str]:
     collapsed = re.sub(r"[^a-z0-9]", "", text.lower())
     found: dict[str, bool] = {}
     for alias, model_id in aliases.items():
-        alias_collapsed = re.sub(r"[^a-z0-9]", "", alias)
-        word_hit = re.search(
-            r"(?<![a-z0-9])" + re.escape(alias) + r"(?![a-z0-9.\-])", low
-        )
-        collapsed_hit = len(alias_collapsed) >= 5 and re.search(
-            re.escape(alias_collapsed) + r"(?![0-9])", collapsed
-        )
-        if word_hit or collapsed_hit:
+        word, collapsed_pattern = _alias_patterns(alias)
+        if word.search(low) or (collapsed_pattern is not None and collapsed_pattern.search(collapsed)):
             found[model_id] = True
     return list(found)
 

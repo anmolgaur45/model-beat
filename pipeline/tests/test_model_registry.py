@@ -676,6 +676,21 @@ def test_parse_endpoints_highspeed_tier_is_not_a_price_rise():
     assert out["vendor_price_in"] == 0.30 and out["vendor_price_out"] == 1.20
 
 
+def test_parse_endpoints_ultrafast_tier_is_not_a_price_rise():
+    # Regression, 2026-10-03: GPT-6 Astra's first-party rows on OpenRouter. `/fast` was
+    # already filtered but `/ultrafast` was not, and with one row per price the modal
+    # tie-break picked $60/$300 as "the list price" (a false +500%).
+    data = {"endpoints": [
+        _ep("OpenAI", 5.0, 25.0, tag="openai/flex"),
+        _ep("Azure", 10.0, 50.0, tag="azure"),
+        _ep("OpenAI", 10.0, 50.0, tag="openai"),
+        _ep("OpenAI", 20.0, 100.0, tag="openai/fast"),
+        _ep("OpenAI", 60.0, 300.0, tag="openai/ultrafast"),
+    ]}
+    out = parse_endpoints(data, "openai")
+    assert out["vendor_price_in"] == 10.0 and out["vendor_price_out"] == 50.0
+
+
 def test_parse_endpoints_lone_cheap_row_still_loses_to_the_modal_rate():
     # The mode must not reopen the hole max() was guarding: a single unlabelled cheap
     # row is not the list price either. Two rows at 2.0 beat one at 1.0.

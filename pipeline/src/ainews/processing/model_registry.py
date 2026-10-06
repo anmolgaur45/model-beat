@@ -445,9 +445,10 @@ _LOW_QUANT_RE = re.compile(r"^(?:fp|int)[1-7]$", re.IGNORECASE)
 # they are dropped before any price is derived. Keep this list current: an unlisted
 # tier survives the filter and can be picked as "the list price". MiniMax's
 # `minimax/highspeed` ($0.30/$2.40 beside the standard $0.30/$1.20) slipped through on
-# 2026-08-12 and read as a +100% output price rise.
+# 2026-08-12 and read as a +100% output price rise. OpenAI's `openai/ultrafast` ($60/$300
+# beside the standard $10/$50 on GPT-6 Astra) did the same on 2026-10-03 as "+500%".
 _SERVICE_TIER_RE = re.compile(
-    r"/(?:flex|priority|batch|off-?peak|turbo|high-?speed|fast)$", re.IGNORECASE
+    r"/(?:flex|priority|batch|off-?peak|turbo|high-?speed|(?:ultra-?)?fast)$", re.IGNORECASE
 )
 
 # First-party brands whose OpenRouter author slug differs from the provider's

@@ -1500,6 +1500,12 @@ a.anc-tick:hover { color: var(--accent-text); }
   padding: 24px 24px 48px;
 }
 .anc-feed { flex: 1; min-width: 0; max-width: 880px; }
+/* The previous day's stories stay on screen while a newly picked date loads
+   (keepPreviousData); dim them so the switch never looks frozen. */
+.anc-section-pending { opacity: 0.5; transition: opacity 0.15s ease; }
+@media (prefers-reduced-motion: reduce) {
+  .anc-section-pending { transition: none; }
+}
 @media (max-width: 960px) {
   .anc-body { padding: 20px 24px 40px; }
 }

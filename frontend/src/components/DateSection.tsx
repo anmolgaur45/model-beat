@@ -65,9 +65,11 @@ interface Props {
   date: string
   clusters: ClusterWithArticles[]
   scoreStyle?: ScoreStyle
+  // The previous day's stories are still shown while a newly picked date loads.
+  pending?: boolean
 }
 
-export function DateSection({ date, clusters, scoreStyle = 'orb' }: Props) {
+export function DateSection({ date, clusters, scoreStyle = 'orb', pending = false }: Props) {
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE)
 
   // Pure-arXiv paper clusters collapse into a shelf below the stories — a day
@@ -107,7 +109,7 @@ export function DateSection({ date, clusters, scoreStyle = 'orb' }: Props) {
   }, [hasMore, visible.length])
 
   return (
-    <section>
+    <section className={pending ? 'anc-section-pending' : undefined} aria-busy={pending}>
       <div className="anc-dhead">
         <h2 className="anc-dhead-label">{label}</h2>
         <span className="anc-dhead-count">

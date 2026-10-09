@@ -123,7 +123,11 @@ export default function HomePageClient({ initialDate, initialClusters, initialTo
 
   // Seed the timeline only for the exact server-rendered view (today, all
   // categories); any other date/category fetches fresh on the client.
-  const { data: timelineData, isLoading: timelineLoading } = trpc.articles.getClusters.useQuery(
+  const {
+    data: timelineData,
+    isLoading: timelineLoading,
+    isPlaceholderData: timelinePending,
+  } = trpc.articles.getClusters.useQuery(
     { date: selectedDate, category: categoryParam, limit: 100, by: 'peak' },
     {
       enabled: !isSearchMode,
@@ -134,6 +138,35 @@ export default function HomePageClient({ initialDate, initialClusters, initialTo
       placeholderData: keepPreviousData,
     },
   )
+
+  // Warm the date rail in the background (2026-10-09): picking a date waited on a
+  // live iad1 -> Cloud SQL round trip. One date at a time, so each request is its
+  // own edge-cacheable URL (httpBatchLink merges calls made in the same tick).
+  const utils = trpc.useUtils()
+  useEffect(() => {
+    if (!timelineMode) return
+    const conn = (navigator as Navigator & { connection?: { saveData?: boolean } }).connection
+    if (conn?.saveData) return
+    let cancelled = false
+    const warm = async () => {
+      for (const { iso } of getMobileDates(7)) {
+        if (cancelled) return
+        await utils.articles.getClusters.prefetch(
+          { date: iso, category: categoryParam, limit: 100, by: 'peak' },
+          { staleTime: 5 * 60_000 },
+        )
+      }
+    }
+    const hasIdle = 'requestIdleCallback' in window
+    const handle = hasIdle
+      ? window.requestIdleCallback(() => void warm(), { timeout: 3000 })
+      : window.setTimeout(() => void warm(), 1500)
+    return () => {
+      cancelled = true
+      if (hasIdle) window.cancelIdleCallback(handle)
+      else window.clearTimeout(handle)
+    }
+  }, [timelineMode, categoryParam, utils])
 
   // Honest split for the hero count: pure-arXiv paper clusters are shelved
   // below the stories by DateSection, so don't count them as "stories".
@@ -349,6 +382,7 @@ export default function HomePageClient({ initialDate, initialClusters, initialTo
               <DateSection
                 date={selectedDate}
                 clusters={timelineData ?? []}
+                pending={timelinePending}
               />
             )
           )}

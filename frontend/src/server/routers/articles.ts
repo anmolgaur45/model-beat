@@ -291,11 +291,24 @@ export const articlesRouter = router({
       if (clusters.length === 0) return []
 
       const clusterIds = clusters.map((c) => c.id)
-      const articles = await sql<Article[]>`
-        SELECT ${ARTICLE_COLS} FROM articles
-        WHERE cluster_id = ANY(${clusterIds})
-        ORDER BY significance_base DESC NULLS LAST
-      `
+      // Both depend only on clusterIds, so run them together: one round trip to
+      // Cloud SQL instead of two on every uncached date pick.
+      const [articles, modelLinks] = await Promise.all([
+        sql<Article[]>`
+          SELECT ${ARTICLE_COLS} FROM articles
+          WHERE cluster_id = ANY(${clusterIds})
+          ORDER BY significance_base DESC NULLS LAST
+        `,
+        // Models this story is about (SEO cross-linking) — links a release story
+        // to its /models/[slug] page. Most clusters have none; cap at 3.
+        sql<{ cluster_id: string; slug: string; name: string }[]>`
+          SELECT mc.cluster_id, m.slug, m.name
+          FROM model_clusters mc
+          JOIN models m ON m.id = mc.model_id
+          WHERE mc.cluster_id = ANY(${clusterIds})
+          ORDER BY m.released_at DESC NULLS LAST
+        `,
+      ])
 
       const articlesByCluster = new Map<string, Article[]>()
       // paper_only is judged over ALL members before the 3-article display cap:
@@ -327,15 +340,6 @@ export const articlesRouter = router({
         }
       }
 
-      // Models this story is about (SEO cross-linking) — links a release story
-      // to its /models/[slug] page. Most clusters have none; cap at 3.
-      const modelLinks = await sql<{ cluster_id: string; slug: string; name: string }[]>`
-        SELECT mc.cluster_id, m.slug, m.name
-        FROM model_clusters mc
-        JOIN models m ON m.id = mc.model_id
-        WHERE mc.cluster_id = ANY(${clusterIds})
-        ORDER BY m.released_at DESC NULLS LAST
-      `
       const modelsByCluster = new Map<string, { slug: string; name: string }[]>()
       for (const r of modelLinks) {
         const arr = modelsByCluster.get(r.cluster_id) ?? []

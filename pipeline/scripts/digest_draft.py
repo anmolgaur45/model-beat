@@ -103,7 +103,8 @@ def main() -> None:
     for slug, name, vendor, released, p_in, p_out, ctx in new_models:
         bits = [f"released {released:%b %d, %Y}" if released else "release date unknown"]
         if p_in is not None:
-            bits.append(f"${p_in:g}/M in, ${p_out:g}/M out")
+            out = f"${p_out:g}/M out" if p_out is not None else "output price unknown"
+            bits.append(f"${p_in:g}/M in, {out}")
         if ctx:
             bits.append(f"{ctx:,} context")
         lines.append(f"- New: {name} ({vendor}; {'; '.join(bits)}). {SITE}/models/{slug}")

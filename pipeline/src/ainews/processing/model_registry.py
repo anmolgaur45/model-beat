@@ -573,6 +573,7 @@ def parse_endpoints(data: dict, author: str) -> dict:
         factor = 1.0 - float(discount) if 0 < float(discount) < 1 else 1.0
         rows.append({
             "provider": e.get("provider_name"),
+            "tag": e.get("tag") or "",
             "price_in": price_in,
             "price_out": price_out,
             "list_in": price_in / factor,
@@ -602,10 +603,20 @@ def parse_endpoints(data: dict, author: str) -> dict:
         # price", emitting false "+10% list price raise" events on three Gemini models.
         # Service-tier tags (flex/priority/batch) are dropped by _SERVICE_TIER_RE above;
         # REGION tags are not, and should not be, so the mode is what protects us.
-        # Tie-break to the higher price keeps the original belt-and-braces against a
-        # lone unlabelled discount row.
+        # The mode alone fails on a tied vote, which the higher-price tie-break then
+        # hands to the regional premium: Google's Flash-Lite models split 2-2 once
+        # `google-vertex/eu` joined `/us` (false "+10%", 2026-08-29/30), and Alibaba's
+        # single default endpoint met its `alibaba/us-east-1` row 1-1 (false "+36%" on
+        # Qwen3.7-Max, "+15%" on Qwen3.7 Flash, 2026-10-13/14). So a tie goes first to
+        # the price the vendor's least-qualified endpoint states (`alibaba` over
+        # `alibaba/us-east-1`, `google-ai-studio` over `google-vertex/eu`), and only
+        # then to the higher price, the original belt-and-braces against a lone
+        # unlabelled discount row.
         prices = [r["list_in"] for r in vendor_rows]
-        modal_in = max(set(prices), key=lambda p: (prices.count(p), p))
+        depth: dict[float, int] = {}
+        for r in vendor_rows:
+            depth[r["list_in"]] = min(depth.get(r["list_in"], 99), r["tag"].count("/"))
+        modal_in = max(set(prices), key=lambda p: (prices.count(p), -depth[p], p))
         v = max(
             (r for r in vendor_rows if r["list_in"] == modal_in),
             key=lambda r: r["list_out"] or 0.0,

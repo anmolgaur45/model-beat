@@ -691,6 +691,27 @@ def test_parse_endpoints_ultrafast_tier_is_not_a_price_rise():
     assert out["vendor_price_in"] == 10.0 and out["vendor_price_out"] == 50.0
 
 
+def test_parse_endpoints_tied_vote_goes_to_the_default_endpoint():
+    # Regressions, 2026-08-29 and 2026-10-13. A tied vote between the vendor's base rate
+    # and a regional premium fell to the higher price. Shapes copied from live payloads.
+    # Gemini 3.1 Flash-Lite, 2-2 once `google-vertex/eu` joined `/us` (false "+10%"):
+    flash_lite = {"endpoints": [
+        _ep("Google AI Studio", 0.25, 1.5, tag="google-ai-studio"),
+        _ep("Google", 0.25, 1.5, tag="google-vertex/global"),
+        _ep("Google", 0.275, 1.65, tag="google-vertex/eu"),
+        _ep("Google", 0.275, 1.65, tag="google-vertex/us"),
+    ]}
+    out = parse_endpoints(flash_lite, "google")
+    assert out["vendor_price_in"] == 0.25 and out["vendor_price_out"] == 1.5
+    # Qwen3.7-Max, 1-1 between Alibaba's default endpoint and its US one (false "+36%"):
+    qwen_max = {"endpoints": [
+        _ep("Alibaba", 1.475, 4.425, tag="alibaba"),
+        _ep("Alibaba", 2.0, 6.0, tag="alibaba/us-east-1"),
+    ]}
+    out = parse_endpoints(qwen_max, "qwen")
+    assert out["vendor_price_in"] == 1.475 and out["vendor_price_out"] == 4.425
+
+
 def test_parse_endpoints_lone_cheap_row_still_loses_to_the_modal_rate():
     # The mode must not reopen the hole max() was guarding: a single unlabelled cheap
     # row is not the list price either. Two rows at 2.0 beat one at 1.0.

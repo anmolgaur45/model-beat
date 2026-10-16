@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import Link from 'next/link'
+import Link from '@/components/Link'
 import { AnimatePresence, motion } from 'framer-motion'
 import type { Article, Cluster, Category } from '@/types/article'
 import { ScoreBadge, type ScoreStyle } from './ScoreBadge'

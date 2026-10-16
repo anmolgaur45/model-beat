@@ -1,6 +1,6 @@
 'use client'
 
-import Link from 'next/link'
+import Link from '@/components/Link'
 import type { Article, Cluster, Category } from '@/types/article'
 import { ScoreOrbLarge } from './ScoreBadge'
 import { receiptFromCluster } from '@/lib/scoreReceipt'

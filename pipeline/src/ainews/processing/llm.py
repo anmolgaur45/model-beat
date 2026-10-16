@@ -8,6 +8,8 @@ LLM bill and one auth mechanism. Callers keep their fail-closed semantics:
 any error here logs and returns None.
 """
 
+import time
+
 import structlog
 
 from ..config import settings
@@ -28,6 +30,13 @@ _RETRY = {
     "http_status_codes": [408, 429, 500, 502, 503, 504],
 }
 
+# Per-attempt ceiling. A normal call takes about a second, but on 2026-10-09 a
+# Vertex slowdown averaged 15.7 s per summary and stretched one run to 53.5 of
+# its 60 minutes, with nothing in the logs to say why. A call slower than
+# _SLOW_CALL_S (retries included) is now logged.
+_TIMEOUT_MS = 30_000
+_SLOW_CALL_S = 10.0
+
 
 def vertex_client():
     """The pipeline's single Vertex client (lazy, cached), with transient retry."""
@@ -42,9 +51,25 @@ def vertex_client():
             vertexai=True,
             project=settings.vertex_project,
             location=settings.vertex_location,
-            http_options=types.HttpOptions(retry_options=types.HttpRetryOptions(**_RETRY)),
+            http_options=types.HttpOptions(
+                timeout=_TIMEOUT_MS,
+                retry_options=types.HttpRetryOptions(**_RETRY),
+            ),
         )
     return _client
+
+
+def generate(prompt: str):
+    """One Vertex generate_content call, logged when it is slow. Raises on error."""
+    start = time.monotonic()
+    response = vertex_client().models.generate_content(
+        model=settings.gemini_model,
+        contents=prompt,
+    )
+    elapsed = time.monotonic() - start
+    if elapsed > _SLOW_CALL_S:
+        log.warning("llm.slow_call", seconds=round(elapsed, 1))
+    return response
 
 
 def gemini_text(prompt: str) -> str | None:
@@ -52,10 +77,7 @@ def gemini_text(prompt: str) -> str | None:
     if not settings.vertex_project:
         return None
     try:
-        response = vertex_client().models.generate_content(
-            model=settings.gemini_model,
-            contents=prompt,
-        )
+        response = generate(prompt)
         if not response.text:
             # Empty text is not an exception, so it used to vanish without a
             # trace: 58 of 65 failed scoring batches in one week had no logged

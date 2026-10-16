@@ -7,19 +7,23 @@ Application Default Credentials (no API key). Mirrors the backfill bounds of
 """
 
 import re
+import time
 from datetime import datetime, timedelta, timezone
 
 import psycopg
 import structlog
 
 from ..config import settings
-from .llm import vertex_client
+from .llm import generate
 
 log = structlog.get_logger()
 
 _RELEVANCE_DAYS = 4
 _MAX_WORDS = 90
 _MEMBERS_PER_CLUSTER = 3
+# Stop starting new summaries after this long; the rest wait for the next run.
+# On 2026-10-09 a Vertex slowdown kept this step busy for 37 minutes.
+_TIME_BUDGET_S = 300
 
 _PROMPT = """\
 You are summarizing an AI/tech news story for a news reader. Write an original, neutral \
@@ -111,6 +115,11 @@ def summarize_pending(conn: psycopg.Connection) -> int:
 
     Only the latest 300 clusters or the last 4 days (whichever is more) are
     considered, so a backlog never balloons the per-run Vertex spend.
+
+    Clusters made only of arXiv papers are skipped. They were 88.5% of all
+    summaries in the week to 2026-10-16, yet they sit in a collapsed shelf where
+    the card already shows the paper's own abstract excerpt. A paper that picks
+    up news coverage stops being paper-only and gets summarized then.
     """
     if not settings.vertex_project:
         log.warning("summarize.skipped", reason="no VERTEX_PROJECT configured")
@@ -120,10 +129,12 @@ def summarize_pending(conn: psycopg.Connection) -> int:
     with conn.cursor() as cur:
         cur.execute(
             """
-            SELECT id, headline, significance_score FROM clusters
+            SELECT id, headline, significance_score FROM clusters c
             WHERE summary IS NULL
               AND significance_score >= %s
               AND first_published_at >= %s
+              AND EXISTS (SELECT 1 FROM articles a
+                          WHERE a.cluster_id = c.id AND a.source_name NOT LIKE 'arXiv%%')
             ORDER BY significance_score DESC, first_published_at DESC
             LIMIT %s
             """,
@@ -135,19 +146,17 @@ def summarize_pending(conn: psycopg.Connection) -> int:
         log.info("summarize.none_pending")
         return 0
 
-    # Shared with scoring and adjudication so every call gets the same retry.
-    client = vertex_client()
-
+    deadline = time.monotonic() + _TIME_BUDGET_S
     total = 0
     failed = 0
     for cluster_id, headline, significance in rows:
+        if time.monotonic() > deadline:
+            log.warning("summarize.budget_exhausted", done=total, left=len(rows) - total - failed)
+            break
         members = _fetch_members(conn, str(cluster_id))
         prompt = build_prompt(headline, members, int(round(significance or 0)))
         try:
-            response = client.models.generate_content(
-                model=settings.gemini_model,
-                contents=prompt,
-            )
+            response = generate(prompt)
             summary = clean_summary(response.text or "")
         except Exception as exc:
             log.warning("summarize.failed", cluster=str(cluster_id)[:8], error=str(exc))

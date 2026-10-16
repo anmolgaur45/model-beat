@@ -87,6 +87,16 @@ export async function GET(req: Request) {
         </div>
       </div>
     ),
-    { width: 1200, height: 630 },
+    {
+      width: 1200,
+      height: 630,
+      // next/og defaults to max-age=0, so every share-card fetch re-rendered the
+      // PNG. The image depends only on its query string, so cache it hard. Not
+      // a page, so keep it out of search results.
+      headers: {
+        'Cache-Control': 'public, max-age=86400, s-maxage=604800, stale-while-revalidate=86400',
+        'X-Robots-Tag': 'noindex',
+      },
+    },
   )
 }

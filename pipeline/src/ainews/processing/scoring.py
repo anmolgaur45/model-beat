@@ -96,6 +96,11 @@ def score_pending(conn: psycopg.Connection, batch_size: int = 10) -> int:
     """Score articles with no impact_score using Vertex Gemini in batches.
 
     Only processes the latest 300 articles or the last 4 days, whichever is more.
+
+    arXiv papers are not scored. They were 72% of scoring batches in the week to
+    2026-10-16, and Gemini rated almost all of them alike (paper clusters landed
+    on 3 or 4). Their impact_score stays NULL, which clustering already treats as
+    the neutral 5.
     """
     if not settings.vertex_project:
         log.warning("scoring.skipped", reason="no VERTEX_PROJECT configured")
@@ -110,7 +115,8 @@ def score_pending(conn: psycopg.Connection, batch_size: int = 10) -> int:
     with conn.cursor() as cur:
         cur.execute(
             "SELECT id, title, body_excerpt, source_name FROM articles "
-            "WHERE impact_score IS NULL AND published_at >= LEAST(%s, "
+            "WHERE impact_score IS NULL AND source_name NOT LIKE 'arXiv%%' "
+            "AND published_at >= LEAST(%s, "
             "(SELECT published_at FROM articles ORDER BY published_at DESC OFFSET %s LIMIT 1)) "
             "ORDER BY published_at DESC",
             (four_days_ago, _BACKFILL_MIN - 1),

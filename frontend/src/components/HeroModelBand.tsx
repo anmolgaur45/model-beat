@@ -1,4 +1,4 @@
-import Link from 'next/link'
+import Link from '@/components/Link'
 
 // Compact, labeled "model tracker" strip under the ticker. Demoted from a
 // hero-weight panel (2026-07-08, repeated Reddit feedback: two competing hero

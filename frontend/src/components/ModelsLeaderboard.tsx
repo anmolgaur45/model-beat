@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo, useState, type Dispatch, type SetStateAction } from 'react'
-import Link from 'next/link'
+import Link from '@/components/Link'
 import type { Model } from '@/types/article'
 import { TABS, MAX_COMPARE, type TabKey } from '@/lib/modelBuckets'
 

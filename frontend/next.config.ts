@@ -89,6 +89,19 @@ const nextConfig: NextConfig = {
           },
         ],
       },
+      {
+        // The compare hub reads searchParams, so it is dynamic: every hit ran
+        // ~6 queries (40-50 renders an hour, 2026-10-16 health check). Same CDN
+        // cache as /story; each ?ids= selection is its own cache entry. Model
+        // data moves every 3h at most, so an hour of staleness is invisible.
+        source: '/models/compare',
+        headers: [
+          {
+            key: 'Vercel-CDN-Cache-Control',
+            value: 'max-age=3600, stale-while-revalidate=86400, stale-if-error=86400',
+          },
+        ],
+      },
     ]
   },
 };

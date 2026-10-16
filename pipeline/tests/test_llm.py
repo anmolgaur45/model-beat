@@ -42,6 +42,28 @@ def test_the_shared_client_retries_quota_errors(monkeypatch):
     assert retry.attempts >= 2
 
 
+def test_the_shared_client_has_a_request_timeout(monkeypatch):
+    # Without one, a Vertex slowdown stretched a run to 53.5 of its 60 minutes
+    from google import genai
+
+    captured = {}
+    monkeypatch.setattr(genai, "Client", lambda **kw: captured.update(kw) or SimpleNamespace())
+    monkeypatch.setattr(llm, "_client", None)
+    llm.vertex_client()
+    assert captured["http_options"].timeout == llm._TIMEOUT_MS
+
+
+def test_a_slow_call_is_logged(monkeypatch):
+    monkeypatch.setattr(llm.settings, "vertex_project", "test-project")
+    ok = SimpleNamespace(text="[]", candidates=[], prompt_feedback=None)
+    monkeypatch.setattr(llm, "_client", _client(ok))
+    clock = iter([0.0, 25.0])
+    monkeypatch.setattr(llm, "time", SimpleNamespace(monotonic=lambda: next(clock)))
+    with structlog.testing.capture_logs() as logs:
+        assert llm.gemini_text("prompt") == "[]"
+    assert [e["event"] for e in logs] == ["llm.slow_call"]
+
+
 def test_a_normal_response_passes_through_unlogged(monkeypatch):
     monkeypatch.setattr(llm.settings, "vertex_project", "test-project")
     ok = SimpleNamespace(text="[]", candidates=[], prompt_feedback=None)

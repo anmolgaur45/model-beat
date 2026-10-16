@@ -1,4 +1,4 @@
-import Link from 'next/link'
+import Link from '@/components/Link'
 import { BrandLockup } from '@/components/BrandLockup'
 import { DigestForm } from '@/components/DigestForm'
 

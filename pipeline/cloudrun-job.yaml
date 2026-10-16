@@ -73,9 +73,12 @@ spec:
           serviceAccountName: ainews-pipeline@ai-news-calendar-493510.iam.gserviceaccount.com
           containers:
             - image: asia-south1-docker.pkg.dev/ai-news-calendar-493510/ainews/pipeline:latest
+              # 1 vCPU (was 2): over the week to 2026-10-16 the p99 was 55% of
+              # 2 vCPU and 33% of memory, and most of a run waits on the network,
+              # which bills per vCPU. Memory stays as headroom for article backlogs.
               resources:
                 limits:
-                  cpu: "2000m"
+                  cpu: "1000m"
                   memory: "2048Mi"
               env:
                 - name: DATABASE_HOST

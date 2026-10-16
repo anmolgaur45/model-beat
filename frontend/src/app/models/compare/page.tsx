@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import Link from 'next/link'
+import Link from '@/components/Link'
 import { SITE_URL } from '@/lib/site'
 import { appRouter } from '@/server/routers/_app'
 import { createContext } from '@/server/trpc'

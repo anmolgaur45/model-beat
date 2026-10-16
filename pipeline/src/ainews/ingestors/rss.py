@@ -1,6 +1,8 @@
 from calendar import timegm
 from datetime import datetime, timezone
 
+import socket
+
 import feedparser
 import structlog
 
@@ -13,6 +15,33 @@ log = structlog.get_logger()
 # Third-party articles arriving via Google News search feeds carry the
 # aggregator tier, not the feed's configured authority
 _AGGREGATOR_AUTHORITY = 3.0
+
+_USER_AGENT = "AI-News-Calendar/1.0 (news aggregator)"
+# Fetches used to run with no timeout and no status check, so a blocked feed
+# parsed an error page into zero entries and logged an info-level count=0.
+# Google News search feeds came back empty from Cloud Run in 12 of 16 runs
+# (2026-10-16 health check), each costing 6-10 s, about 90 s a run.
+_TIMEOUT_S = 20.0
+_GOOGLE_NEWS_TIMEOUT_S = 5.0
+
+
+def feed_timeout(url: str) -> float:
+    return _GOOGLE_NEWS_TIMEOUT_S if "news.google.com" in url else _TIMEOUT_S
+
+
+def fetch_feed(url: str, timeout: float):
+    """feedparser does the HTTP itself; the timeout goes on the socket default.
+
+    Cloudflare-fronted feeds (MarkTechPost) answer httpx with 403 even when its
+    headers match feedparser's, so the fetch stays in feedparser. Ingest runs
+    feeds one at a time, so swapping the process default is safe.
+    """
+    previous = socket.getdefaulttimeout()
+    socket.setdefaulttimeout(timeout)
+    try:
+        return feedparser.parse(url, request_headers={"User-Agent": _USER_AGENT})
+    finally:
+        socket.setdefaulttimeout(previous)
 
 
 def extract_publisher(entry) -> str | None:
@@ -38,12 +67,19 @@ def publisher_matches_org(publisher: str, organization: str) -> bool:
 
 def ingest_rss(source: Source) -> list[NormalizedArticle]:
     try:
-        feed = feedparser.parse(
-            source.feed_url,
-            request_headers={"User-Agent": "AI-News-Calendar/1.0 (news aggregator)"},
-        )
+        feed = fetch_feed(source.feed_url, feed_timeout(source.feed_url))
     except Exception as exc:
         log.warning("rss.fetch_failed", source=source.name, error=str(exc))
+        return []
+
+    status = feed.get("status")
+    if (status is not None and status >= 400) or (feed.bozo and not feed.entries):
+        log.warning(
+            "rss.feed_failed",
+            source=source.name,
+            status=status,
+            error=repr(feed.get("bozo_exception")) if feed.bozo else None,
+        )
         return []
 
     results: list[NormalizedArticle] = []

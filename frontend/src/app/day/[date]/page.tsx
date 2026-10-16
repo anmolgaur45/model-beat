@@ -1,7 +1,7 @@
 import { cache } from 'react'
 import type { Metadata } from 'next'
 import { AUTHOR_JSONLD, SITE_URL } from '@/lib/site'
-import Link from 'next/link'
+import Link from '@/components/Link'
 import { notFound } from 'next/navigation'
 import { appRouter } from '@/server/routers/_app'
 import { createContext } from '@/server/trpc'

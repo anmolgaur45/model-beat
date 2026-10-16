@@ -1,4 +1,75 @@
+from types import SimpleNamespace
+
+import structlog
+
+from ainews.processing import summarize
 from ainews.processing.summarize import build_prompt, clean_summary
+
+
+class FakeCursor:
+    def __init__(self, store):
+        self.store = store
+        self.last = ""
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def execute(self, sql, params=()):
+        self.last = " ".join(sql.split())
+        self.store["calls"].append((self.last, params))
+
+    def fetchall(self):
+        if self.last.startswith("SELECT id, headline"):
+            return self.store["rows"]
+        return [("Reuters", "An excerpt.")]
+
+
+class FakeConn:
+    def __init__(self, store):
+        self.store = store
+
+    def cursor(self):
+        return FakeCursor(self.store)
+
+    def commit(self):
+        pass
+
+
+def _run(monkeypatch, rows, budget=None):
+    monkeypatch.setattr(summarize.settings, "vertex_project", "test-project")
+    calls = []
+    monkeypatch.setattr(
+        summarize, "generate", lambda prompt: calls.append(prompt) or SimpleNamespace(text="A summary.")
+    )
+    if budget is not None:
+        monkeypatch.setattr(summarize, "_TIME_BUDGET_S", budget)
+    store = {"calls": [], "rows": rows}
+    summarize.summarize_pending(FakeConn(store))
+    return store, calls
+
+
+def test_paper_only_clusters_are_not_summarized(monkeypatch):
+    # 88.5% of summaries went to arXiv-only clusters nobody expands (2026-10-16)
+    store, _ = _run(monkeypatch, [])
+    sql = next(c[0] for c in store["calls"] if c[0].startswith("SELECT id, headline"))
+    assert "a.source_name NOT LIKE 'arXiv%%'" in sql
+
+
+def test_pending_clusters_are_summarized(monkeypatch):
+    store, calls = _run(monkeypatch, [("c1", "Headline one", 6), ("c2", "Headline two", 5)])
+    assert len(calls) == 2
+    assert sum(1 for sql, _ in store["calls"] if sql.startswith("UPDATE clusters SET summary")) == 2
+
+
+def test_the_time_budget_stops_new_calls(monkeypatch):
+    # A Vertex slowdown on 2026-10-09 kept this step busy for 37 minutes
+    with structlog.testing.capture_logs() as logs:
+        _, calls = _run(monkeypatch, [("c1", "Headline", 6)], budget=-1)
+    assert calls == []
+    assert [e["event"] for e in logs] == ["summarize.budget_exhausted", "summarize.done"]
 
 
 def test_build_prompt_includes_headline_and_excerpts():

@@ -80,6 +80,13 @@ def test_select_is_bounded_to_the_backfill_window(monkeypatch):
     assert abs((floor - expected).total_seconds()) < 60
 
 
+def test_arxiv_papers_are_not_sent_to_gemini(monkeypatch):
+    # Papers were 72% of scoring batches and Gemini rated them almost uniformly
+    store, _ = _run(monkeypatch, [])
+    sql = next(c[0] for c in store["calls"] if c[0].startswith("SELECT id, title"))
+    assert "source_name NOT LIKE 'arXiv%%'" in sql
+
+
 def test_a_healthy_batch_is_one_call(monkeypatch):
     store, calls = _run(monkeypatch, _rows(10))
     assert len(calls) == 1

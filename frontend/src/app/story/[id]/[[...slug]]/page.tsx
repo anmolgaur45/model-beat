@@ -1,6 +1,6 @@
 import { cache } from 'react'
 import type { Metadata } from 'next'
-import Link from 'next/link'
+import Link from '@/components/Link'
 import { TRPCError } from '@trpc/server'
 import { notFound } from 'next/navigation'
 import { SITE_URL } from '@/lib/site'

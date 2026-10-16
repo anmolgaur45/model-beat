@@ -20,7 +20,11 @@ const sql = postgres({
   // Dropped 5 → 3 on 2026-07-11: a crawler burst on the dynamic story pages
   // fanned out enough instances to exhaust the slots and the pipeline's
   // connect was refused mid-spike (~14 concurrent instances now fit).
-  max: 3,
+  // A build prerenders with one process per CPU (7 on a dev machine), each with
+  // its own pool, and shares the 40-connection ainews_app cap with live traffic.
+  // Measured 2026-10-16: warm Vercel instances held 18, and a local build at 2
+  // per process peaked the role at 35, so builds get 1.
+  max: process.env.NEXT_PHASE === 'phase-production-build' ? 1 : 3,
   idle_timeout: 20, // release idle conns quickly between invocations
   max_lifetime: 60 * 30, // recycle a connection every ~30 min
   connect_timeout: 10,

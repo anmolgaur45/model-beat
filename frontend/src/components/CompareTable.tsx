@@ -1,4 +1,4 @@
-import Link from 'next/link'
+import Link from '@/components/Link'
 import type { Model, ModelBenchmark } from '@/types/article'
 import { BUCKETS } from '@/lib/modelBuckets'
 

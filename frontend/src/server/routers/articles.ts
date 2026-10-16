@@ -391,35 +391,39 @@ export const articlesRouter = router({
         }
       }
 
-      const articles = await sql<Article[]>`
-        SELECT ${ARTICLE_COLS} FROM articles
-        WHERE cluster_id = ${input.id}
-        ORDER BY significance_base DESC NULLS LAST
-      `
+      // These three only need the id, so they share one round trip instead of
+      // three in a row (story pages render uncached on every crawler hit).
+      const [articles, models, byModel] = await Promise.all([
+        sql<Article[]>`
+          SELECT ${ARTICLE_COLS} FROM articles
+          WHERE cluster_id = ${input.id}
+          ORDER BY significance_base DESC NULLS LAST
+        `,
+        // Models this story is about, for cross-linking to /models/[slug]. Cap 3.
+        sql<{ slug: string; name: string }[]>`
+          SELECT m.slug, m.name
+          FROM model_clusters mc
+          JOIN models m ON m.id = mc.model_id
+          WHERE mc.cluster_id = ${input.id}
+          ORDER BY m.released_at DESC NULLS LAST
+          LIMIT 3
+        `,
+        // Related stories: first those sharing a model with this one; if none,
+        // same-category stories near in time. Lightweight shape for card links.
+        sql<RelatedStory[]>`
+          SELECT id, headline, category, significance_score, first_published_at, article_count
+          FROM clusters
+          WHERE id IN (
+            SELECT DISTINCT cluster_id FROM model_clusters
+            WHERE model_id IN (SELECT model_id FROM model_clusters WHERE cluster_id = ${input.id})
+              AND cluster_id <> ${input.id}
+          )
+          ORDER BY significance_score DESC, first_published_at DESC
+          LIMIT 4
+        `,
+      ])
 
-      // Models this story is about, for cross-linking to /models/[slug]. Cap 3.
-      const models = await sql<{ slug: string; name: string }[]>`
-        SELECT m.slug, m.name
-        FROM model_clusters mc
-        JOIN models m ON m.id = mc.model_id
-        WHERE mc.cluster_id = ${input.id}
-        ORDER BY m.released_at DESC NULLS LAST
-        LIMIT 3
-      `
-
-      // Related stories: first those sharing a model with this one; if none,
-      // same-category stories near in time. Lightweight shape for card links.
-      let related = await sql<RelatedStory[]>`
-        SELECT id, headline, category, significance_score, first_published_at, article_count
-        FROM clusters
-        WHERE id IN (
-          SELECT DISTINCT cluster_id FROM model_clusters
-          WHERE model_id IN (SELECT model_id FROM model_clusters WHERE cluster_id = ${input.id})
-            AND cluster_id <> ${input.id}
-        )
-        ORDER BY significance_score DESC, first_published_at DESC
-        LIMIT 4
-      `
+      let related = byModel
       if (related.length === 0) {
         related = await sql<RelatedStory[]>`
           SELECT id, headline, category, significance_score, first_published_at, article_count

@@ -1,6 +1,6 @@
 import { cache } from 'react'
 import type { Metadata } from 'next'
-import Link from 'next/link'
+import Link from '@/components/Link'
 import { notFound } from 'next/navigation'
 import { SITE_URL } from '@/lib/site'
 import { appRouter } from '@/server/routers/_app'
@@ -114,6 +114,7 @@ export async function generateMetadata({
   const { pair } = await params
   const parsed = parsePair(pair)
   if (!parsed) return {}
+  if (!(await comparePairKeys()).has(pairKey(parsed[0], parsed[1]))) return {}
   const models = await loadPair(parsed[0], parsed[1])
   if (models.length < 2) return {}
   const [a, b] = models
@@ -145,6 +146,10 @@ export default async function ComparePairPage({
   const { pair } = await params
   const parsed = parsePair(pair)
   if (!parsed) notFound()
+  // Only curated pairs are pages; other model pairs live in the compare tool.
+  // Rendering any pair on demand let crawlers sweep ~2.7k noindex URLs, each a
+  // DB-backed render and an ISR write (2026-10-16 health check).
+  if (!(await comparePairKeys()).has(pairKey(parsed[0], parsed[1]))) notFound()
 
   const models = await loadPair(parsed[0], parsed[1])
   if (models.length < 2) notFound()

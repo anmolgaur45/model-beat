@@ -5,7 +5,7 @@
 // design_handoff_model_page/model-page2.jsx to our stack (useTheme for the
 // data-theme/localStorage continuity the rest of the app uses).
 import { useState } from 'react'
-import Link from 'next/link'
+import Link from '@/components/Link'
 import { useTheme } from '@/hooks/useTheme'
 import { BrandLockup } from '@/components/BrandLockup'
 
@@ -52,7 +52,7 @@ export interface ModelView {
   bestAt: { label: string; pct: number }[]
   faq: { q: string; a: string }[]
   updated: string
-  compareWith?: { name: string; href: string }[]
+  compareWith?: { name: string; href: string; nofollow?: boolean }[]
   news: { headline: string; url: string | null; source: string; date: string }[]
   // Phase V: the model's changelog (price/context/benchmark/catalog events)
   changelog?: { date: string; summary: string; tag: string }[]
@@ -365,7 +365,7 @@ export function ModelTelemetry({ view: M }: { view: ModelView }) {
             </div>
             <div className="m2-cwlist">
               {M.compareWith.map((c) => (
-                <Link key={c.href} href={c.href} className="m2-cwchip">
+                <Link key={c.href} href={c.href} className="m2-cwchip" rel={c.nofollow ? 'nofollow' : undefined}>
                   {M.name} <span className="vs">vs</span> {c.name}
                 </Link>
               ))}

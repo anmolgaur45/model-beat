@@ -8,7 +8,7 @@ import type { Model, ModelBenchmark, ModelEvent, Cluster, Article } from '@/type
 import { ModelTelemetry, type ModelView, type BenchRowView, type IndexGauge } from '@/components/ModelTelemetry'
 import { BUCKETS } from '@/lib/modelBuckets'
 import { benchmarkMeta, GROUP_ORDER, GROUP_LABELS } from '@/lib/benchmarks'
-import { flagshipModels, pairKey } from '@/lib/comparePairs'
+import { comparePairKeys, flagshipModels, pairKey } from '@/lib/comparePairs'
 import sql from '@/lib/db'
 
 // Static at build; the pipeline-triggered redeploy every 3h keeps these
@@ -363,11 +363,19 @@ export default async function ModelPage({
   const view = toView(model)
 
   // Internal links to comparison pages — this model vs the frontier flagships.
-  const flagships = await flagshipModels()
+  // Only curated pairs have a page. The rest open the compare tool, which is
+  // noindex and disallowed in robots.txt: linking every model to five pair
+  // URLs let crawlers sweep ~2.7k on-demand renders (2026-10-16 health check).
+  const [flagships, curated] = await Promise.all([flagshipModels(), comparePairKeys()])
   view.compareWith = flagships
     .filter((f) => f.slug !== model.slug)
     .slice(0, 5)
-    .map((f) => ({ name: f.name, href: `/models/compare/${pairKey(model.slug, f.slug)}` }))
+    .map((f) => {
+      const key = pairKey(model.slug, f.slug)
+      return curated.has(key)
+        ? { name: f.name, href: `/models/compare/${key}` }
+        : { name: f.name, href: `/models/compare?ids=${model.slug},${f.slug}`, nofollow: true }
+    })
 
   const jsonLd = [
     {

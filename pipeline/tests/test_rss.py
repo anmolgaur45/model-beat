@@ -1,8 +1,67 @@
+import socket
+from urllib.error import URLError
+
+import feedparser
+import structlog
+
+from ainews.ingestors import rss
 from ainews.ingestors.rss import (
     extract_publisher,
     publisher_matches_org,
     strip_publisher_suffix,
 )
+from ainews.sources import Source
+
+_FEED = b"""<?xml version="1.0"?><rss version="2.0"><channel><title>Example</title>
+<item><title>OpenAI ships a new reasoning model</title><link>https://example.com/a</link>
+<pubDate>Thu, 15 Oct 2026 12:00:00 GMT</pubDate><description>Details.</description></item>
+</channel></rss>"""
+_real_parse = feedparser.parse
+
+
+def _source(url="https://example.com/feed"):
+    return Source("Example", "Example", url, "rss", 5, "company-news")
+
+
+def _failed(status=None, exc=None):
+    return feedparser.FeedParserDict(entries=[], bozo=1, bozo_exception=exc, **({"status": status} if status else {}))
+
+
+def test_a_healthy_feed_is_parsed(monkeypatch):
+    monkeypatch.setattr(rss.feedparser, "parse", lambda url, **kw: _real_parse(_FEED))
+    assert [a.source_url for a in rss.ingest_rss(_source())] == ["https://example.com/a"]
+
+
+def test_a_blocked_feed_is_a_warning_not_an_empty_success(monkeypatch):
+    # A block page used to parse into zero entries and log an info-level count=0
+    monkeypatch.setattr(rss.feedparser, "parse", lambda url, **kw: _failed(status=503))
+    with structlog.testing.capture_logs() as logs:
+        assert rss.ingest_rss(_source()) == []
+    assert [(e["event"], e["log_level"], e["status"]) for e in logs] == [("rss.feed_failed", "warning", 503)]
+
+
+def test_a_timeout_is_logged_and_skipped(monkeypatch):
+    monkeypatch.setattr(rss.feedparser, "parse", lambda url, **kw: _failed(exc=URLError(socket.timeout("timed out"))))
+    with structlog.testing.capture_logs() as logs:
+        assert rss.ingest_rss(_source()) == []
+    assert [e["event"] for e in logs] == ["rss.feed_failed"]
+    assert "timed out" in logs[0]["error"]
+
+
+def test_each_fetch_gets_a_timeout_and_restores_the_default(monkeypatch):
+    seen = {}
+
+    def parse(url, **kw):
+        seen[url] = socket.getdefaulttimeout()
+        return _failed(status=503)
+
+    monkeypatch.setattr(rss.feedparser, "parse", parse)
+    google = "https://news.google.com/rss/search?q=Sakana+AI"
+    rss.ingest_rss(_source(google))
+    rss.ingest_rss(_source())
+    assert seen[google] == rss._GOOGLE_NEWS_TIMEOUT_S
+    assert seen["https://example.com/feed"] == rss._TIMEOUT_S
+    assert socket.getdefaulttimeout() is None
 
 
 def test_extract_publisher_from_google_news_entry():

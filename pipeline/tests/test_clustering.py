@@ -12,6 +12,7 @@ from ainews.processing.clustering import (
     normalize_score,
     pick_category,
     pick_headline,
+    recheck_group,
 )
 
 WINDOW_S = 48 * 3600
@@ -191,6 +192,38 @@ def test_extra_edges_bridge_into_threshold_group():
     )
     assert len(groups) == 1
     assert sorted(groups[0]) == [0, 1, 2]
+
+
+# ── recheck_group (stops union-find chains) ─────────────────────────────────
+
+def test_recheck_group_stops_a_chain():
+    # Union-find groups A, B and C (A-B 0.20, B-C 0.20) though C is 0.72 from A.
+    # Regression, 2026-10-16: chained merges built 24- and 17-article blobs.
+    admitted, rejected = recheck_group(
+        [0, 1, 2], 0, [VA, VB, VC], [3, 1, 1], [False] * 3, 0.30
+    )
+    assert [(i, r) for i, _d, r in admitted] == [(1, "auto")]
+    assert [i for i, _d in rejected] == [2]
+
+
+def test_recheck_group_admits_a_confirmed_member_in_the_band():
+    # FAR is 0.40 from A: past the threshold, inside the 0.45 adjudication band.
+    admitted, rejected = recheck_group(
+        [0, 1], 0, [VA, VFAR], [1, 1], [False, False], 0.30, {frozenset((0, 1))}
+    )
+    assert [(i, r) for i, _d, r in admitted] == [(1, "llm")] and rejected == []
+    # Unconfirmed, the same member stays out.
+    admitted, rejected = recheck_group([0, 1], 0, [VA, VFAR], [1, 1], [False, False], 0.30)
+    assert admitted == [] and [i for i, _d in rejected] == [1]
+
+
+def test_recheck_group_confirmation_does_not_reach_past_the_band():
+    # Confirmed with B, but C sits 0.57 from the A+B centroid: beyond 0.45.
+    admitted, rejected = recheck_group(
+        [0, 1, 2], 0, [VA, VB, VC], [3, 1, 1], [False] * 3, 0.30, {frozenset((1, 2))}
+    )
+    assert [i for i, _d, _r in admitted] == [1]
+    assert [i for i, _d in rejected] == [2]
 
 
 # ── ambiguous_pairs ─────────────────────────────────────────────────────────

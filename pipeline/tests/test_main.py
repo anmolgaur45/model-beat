@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 import psycopg
 
 import ainews.main as m
-from ainews.main import cap_new_articles, dedup_by_title, dedup_by_url
+from ainews.main import cap_new_articles, dedup_by_title, dedup_by_url, drop_backdated
 from ainews.models import NormalizedArticle
 
 
@@ -98,6 +98,43 @@ def test_cap_zero_limit_is_noop():
     kept, deferred = cap_new_articles(articles, 0)
     assert kept == articles
     assert deferred == 0
+
+
+def test_google_news_feeds_wait_after_one_fails(monkeypatch):
+    # 2026-10-16 12:00 UTC: all 14 Google News feeds timed out, ~5 s each
+    from ainews.sources import Source
+    gn = [Source(f"GN {i}", "X", f"https://news.google.com/rss/search?q={i}", "rss", 7, "company-news")
+          for i in range(3)]
+    other = Source("Lab blog", "Lab", "https://lab.example/feed", "rss", 10, "model-releases")
+    monkeypatch.setattr(m, "RSS_SOURCES", [gn[0], other, gn[1], gn[2]])
+    monkeypatch.setattr(m, "ingest_hn", lambda: [])
+    monkeypatch.setattr(m, "ingest_github", lambda: [])
+    fetched = []
+
+    def fake_ingest(source):
+        fetched.append(source.name)
+        return None if source.name == "GN 0" else [_make(f"https://a.com/{source.name}")]
+
+    monkeypatch.setattr(m, "ingest_rss", fake_ingest)
+    assert [a.source_url for a in m.ingest_all()] == ["https://a.com/Lab blog"]
+    assert fetched == ["GN 0", "Lab blog"]
+
+
+def test_log_lines_carry_a_cloud_logging_severity():
+    assert m.add_severity(None, "warning", {"event": "x", "level": "warning"})["severity"] == "WARNING"
+    assert m.add_severity(None, "info", {"event": "x", "level": "info"})["severity"] == "INFO"
+    assert m.add_severity(None, "error", {"event": "x"})["severity"] == "ERROR"
+
+
+def test_backdated_articles_are_dropped():
+    # Past the embedding floor an article is never embedded or clustered (487
+    # such rows by 2026-10-16, re-listed by feeds up to four years late).
+    articles = [_make("https://a.com/new", published_at=_ts(days_ago=29)),
+                _make("https://a.com/old", published_at=_ts(days_ago=31)),
+                _make("https://a.com/ancient", published_at="2022-11-09T10:00:00+00:00")]
+    kept, dropped = drop_backdated(articles, 30)
+    assert [a.source_url for a in kept] == ["https://a.com/new"]
+    assert dropped == 2
 
 
 # ── record_run must never fail an otherwise-successful run ────────────────────

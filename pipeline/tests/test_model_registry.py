@@ -149,6 +149,13 @@ def _benchmark_zip(files: dict[str, str]) -> bytes:
     return buf.getvalue()
 
 
+# Epoch's ECI layout since Sept 2026: one row per model, in a folder.
+_ECI_HEADER = (
+    "Model,Display name,eci,eci_ci_low,eci_ci_high,date,Organization,"
+    "Country (of organization),Model accessibility,Accessibility group,model_versions\n"
+)
+
+
 def test_parse_benchmark_zip_joins_known_models_and_takes_max():
     gpqa = (
         "Model version,mean_score,Release date\n"
@@ -156,11 +163,8 @@ def test_parse_benchmark_zip_joins_known_models_and_takes_max():
         "claude-opus-4-8_max,0.88,2026-05-28\n"   # higher effort variant wins
         "unknown-model_high,0.99,2026-01-01\n"    # not in registry → dropped
     )
-    eci = (
-        "Model version,ECI Score,Release date\n"
-        "claude-opus-4-8_max,160.5,2026-05-28\n"
-    )
-    raw = _benchmark_zip({"gpqa_diamond.csv": gpqa, "epoch_capabilities_index.csv": eci})
+    eci = _ECI_HEADER + "Claude Opus 4.8,Claude Opus 4.8,160.5,,,2026-05-28,Anthropic,,API access,,\n"
+    raw = _benchmark_zip({"gpqa_diamond.csv": gpqa, "epoch_capabilities_index/eci_scores.csv": eci})
     known = {normalize_key("Claude Opus 4.8")}
 
     scores = parse_benchmark_zip(raw, known)
@@ -172,13 +176,13 @@ def test_parse_benchmark_zip_joins_known_models_and_takes_max():
 
 
 def test_build_version_alias_and_benchmark_join_via_alias():
-    # ECI carries both Model version and clean Model name; build the bridge.
-    eci = (
-        "Model version,ECI Score,Release date,Organization,Country,Model accessibility,"
-        "Training compute (FLOP),Confidence,Model name,Description,Display name\n"
-        "deepseek/deepseek-v3.2,150,2025-12-01,DeepSeek,China,Open weights (unrestricted),,,DeepSeek-V3.2,,DeepSeek-V3.2\n"
+    # model_metadata.csv carries both the version and the clean model; build the bridge.
+    metadata = (
+        "model_version,model_group,date,display_name,organization,country,accessibility,"
+        "training_compute_flop\n"
+        "deepseek/deepseek-v3.2,DeepSeek-V3.2,2025-12-01,DeepSeek-V3.2,DeepSeek,China,,\n"
     )
-    raw = _benchmark_zip({"epoch_capabilities_index.csv": eci})
+    raw = _benchmark_zip({"model_metadata.csv": metadata})
     alias = build_version_alias(raw)
     # version key resolves to the clean name key
     assert alias[normalize_key("deepseek/deepseek-v3.2")] == normalize_key("DeepSeek-V3.2")
@@ -272,22 +276,18 @@ def test_accessibility_to_open_weight():
 
 
 def _eci_zip(rows: str) -> bytes:
-    header = (
-        "Model version,ECI Score,Release date,Organization,Country,"
-        "Model accessibility,Training compute (FLOP),Confidence,Model name,Description,Display name\n"
-    )
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as z:
-        z.writestr("epoch_capabilities_index.csv", header + rows)
+        z.writestr("epoch_capabilities_index/eci_scores.csv", _ECI_HEADER + rows)
     return buf.getvalue()
 
 
 def test_parse_eci_roster_adds_clean_named_models():
     recent = (datetime.now(timezone.utc) - timedelta(days=20)).strftime("%Y-%m-%d")
     raw = _eci_zip(
-        f"gemini-3.5-flash_high,150,{recent},Google,USA,,,,Gemini 3.5 Flash,,Gemini 3.5 Flash (high)\n"
-        # effort variant of the same model collapses to one entry
-        f"gemini-3.5-flash_minimal,140,{recent},Google,USA,,,,Gemini 3.5 Flash,,Gemini 3.5 Flash (minimal)\n"
+        f"Gemini 3.5 Flash,Gemini 3.5 Flash,150,,,{recent},Google,USA,API access,,\n"
+        # a repeated name collapses to one entry
+        f"Gemini 3.5 Flash,Gemini 3.5 Flash,140,,,{recent},Google,USA,API access,,\n"
     )
     rows = parse_eci_roster(raw, 365)
     assert len(rows) == 1
@@ -302,21 +302,92 @@ def test_parse_eci_roster_skips_unreleased_and_old():
     recent = (datetime.now(timezone.utc) - timedelta(days=20)).strftime("%Y-%m-%d")
     old = (datetime.now(timezone.utc) - timedelta(days=500)).strftime("%Y-%m-%d")
     raw = _eci_zip(
-        f"secret-x,200,{recent},Lab,USA,Unreleased,,,Secret X,,Secret X\n"
-        f"old-model,100,{old},Lab,USA,API access,,,Old Model,,Old Model\n"
+        f"Secret X,Secret X,200,,,{recent},Lab,USA,Unreleased,,\n"
+        f"Old Model,Old Model,100,,,{old},Lab,USA,API access,,\n"
     )
     assert parse_eci_roster(raw, 365) == []
+
+
+def test_parse_eci_roster_reads_the_folder_layout_only():
+    # Regression, Sept 2026: Epoch moved the file to epoch_capabilities_index/
+    # eci_scores.csv. The old top-level name now means nothing is there.
+    recent = (datetime.now(timezone.utc) - timedelta(days=20)).strftime("%Y-%m-%d")
+    old_layout = _benchmark_zip({"epoch_capabilities_index.csv": "x\n"})
+    assert parse_eci_roster(old_layout, 365) == []
+    rows = parse_eci_roster(_eci_zip(f"Claude Opus 5.5,Claude Opus 5.5,166.82,,,{recent},Anthropic,,API access,,\n"), 365)
+    assert [r["epoch_key"] for r in rows] == ["Claude Opus 5.5"]
 
 
 def test_parse_eci_roster_derives_open_weight_from_accessibility():
     recent = (datetime.now(timezone.utc) - timedelta(days=20)).strftime("%Y-%m-%d")
     raw = _eci_zip(
-        f"oss-1,120,{recent},Lab,China,Open weights (unrestricted),,,OSS One,,OSS One\n"
-        f"api-1,130,{recent},Lab,USA,API access,,,API One,,API One\n"
+        f"OSS One,OSS One,120,,,{recent},Lab,China,Open weights (unrestricted),,\n"
+        f"API One,API One,130,,,{recent},Lab,USA,API access,,\n"
     )
     by_name = {r["name"]: r for r in parse_eci_roster(raw, 365)}
     assert by_name["OSS One"]["is_open_weight"] is True
     assert by_name["API One"]["is_open_weight"] is False
+
+
+# ── sync_models: one row per model across spellings ───────────────────────────
+
+class _FakeCursor:
+    rowcount = 1
+
+    def __init__(self, store):
+        self.store = store
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def execute(self, sql, params=None):
+        self.store["calls"].append((" ".join(sql.split()), params))
+
+    def fetchall(self):
+        return self.store["rows"]
+
+
+class _FakeConn:
+    def __init__(self, store):
+        self.store = store
+
+    def cursor(self):
+        return _FakeCursor(self.store)
+
+    def commit(self):
+        pass
+
+    def rollback(self):
+        pass
+
+
+def test_sync_models_adopts_the_same_model_spelled_differently(monkeypatch):
+    # Regression, 2026-10-16: OpenRouter created "Qwen3.8 27B" (qwen3-8-27b) before Epoch
+    # published "Qwen 3.8 27B" (qwen-3-8-27b), and Epoch renamed "Qwen 3.7 Max" to
+    # "Qwen3.7-Max". The slugs differed, so each insert added a duplicate page.
+    recent = (datetime.now(timezone.utc) - timedelta(days=5)).strftime("%Y-%m-%d")
+    text = _models_csv(
+        f"Qwen 3.8 27B,{recent},Alibaba,,,,\n"
+        f"Qwen3.7-Max,{recent},Alibaba,,,,\n"
+        f"Claude Opus 4.8,{recent},Anthropic,,,,\n"
+        f"Brand New 1,{recent},Lab,,,,\n"
+    )
+    monkeypatch.setattr(model_registry, "_fetch", lambda url, as_bytes, headers=None: None if as_bytes else text)
+    store = {"calls": [], "rows": [
+        ("id-or", None, "Qwen3.8 27B"),
+        ("id-old", "Qwen 3.7 Max", "Qwen 3.7 Max"),
+        ("id-opus", "Claude Opus 4.8", "Claude Opus 4.8"),
+    ]}
+    model_registry.sync_models(_FakeConn(store))
+
+    adopted = {p["adopt_id"]: p["epoch_key"] for sql, p in store["calls"]
+               if sql.startswith("UPDATE models SET epoch_key") and p and "adopt_id" in p}
+    assert adopted == {"id-or": "Qwen 3.8 27B", "id-old": "Qwen3.7-Max"}
+    inserted = [p["epoch_key"] for sql, p in store["calls"] if sql.startswith("INSERT INTO models")]
+    assert inserted == ["Claude Opus 4.8", "Brand New 1"]  # exact key: the normal upsert
 
 
 # ── OpenRouter pricing (Phase O1) ──────────────────────────────────────────────
@@ -349,6 +420,20 @@ def test_parse_openrouter_models_missing_description_is_none():
     data = [{"id": "x/model", "pricing": {"prompt": "0.000001", "completion": "0"}}]
     rec = parse_openrouter_models(data)[normalize_key("model")]
     assert rec["description"] is None
+
+
+def test_parse_openrouter_models_skips_the_batch_tier():
+    # The catalog lists `:batch` rows ("GPT-6 Sol (batch)") at half price. As their own
+    # key they became 40 thin model pages (2026-10-16 health check); collapsed into the
+    # base key they would win the cheapest-input pick and replace the base model's id.
+    data = [
+        {"id": "openai/gpt-6-sol", "pricing": {"prompt": "0.000004", "completion": "0.00002"}},
+        {"id": "openai/gpt-6-sol:batch", "pricing": {"prompt": "0.000002", "completion": "0.00001"}},
+    ]
+    catalog = parse_openrouter_models(data)
+    assert list(catalog) == [openrouter_key("openai/gpt-6-sol")]
+    rec = catalog[openrouter_key("openai/gpt-6-sol")]
+    assert rec["openrouter_id"] == "openai/gpt-6-sol" and rec["price_in"] == 4.0
 
 
 def test_clean_description_trims_truncated_fragment():
@@ -752,6 +837,46 @@ def test_parse_endpoints_unknown_quant_passes_and_empty_is_safe():
     out = parse_endpoints({"endpoints": [_ep("X", 1.0, 2.0, quant=None)]}, "y")
     assert out["floor_price_in"] == 1.0
     assert parse_endpoints({}, "y")["floor_price_in"] is None
+
+
+def test_parse_endpoints_floor_is_never_above_list():
+    # Regression, 2026-10-14: GLM-5.2's floor was picked by input price alone, so a
+    # near-zero input with a steep output won and the tracker published "via Wafer
+    # now $7 per 1M output tokens (+75%)" against Z.AI's $4.40 list. Rows copied
+    # from the live payload on 2026-10-16.
+    data = {"endpoints": [
+        _ep("Relace", 0.0351, 6.0, quant="unknown"),
+        _ep("Morph", 0.079, 6.0, quant="fp8"),
+        _ep("DigitalOcean", 0.7, 2.2, quant="unknown"),
+        _ep("Alibaba", 0.966, 3.036, quant="fp8"),
+        _ep("Mistral", 1.4, 4.4, quant="nvfp4"),
+        _ep("Z.AI", 1.4, 4.4, quant="fp8"),
+    ]}
+    out = parse_endpoints(data, "z-ai")
+    assert (out["vendor_price_in"], out["vendor_price_out"]) == (1.4, 4.4)
+    assert out["floor_provider"] == "DigitalOcean"
+    assert (out["floor_price_in"], out["floor_price_out"]) == (0.7, 2.2)
+
+
+def test_parse_endpoints_floor_ranks_by_blended_price():
+    # With no vendor row there is no list to cap against; the blend still keeps a
+    # cheap input from hiding an expensive output.
+    data = {"endpoints": [_ep("A", 0.10, 5.0), _ep("B", 0.50, 1.0)]}
+    out = parse_endpoints(data, "meta-llama")
+    assert out["floor_provider"] == "B" and out["floor_price_in"] == 0.50
+
+
+def test_parse_endpoints_promo_vendor_with_dearer_resellers_leaves_floor_none():
+    # The vendor's own row is on a promo (not credible) and every reseller sits above
+    # list: there is no honest floor, so none is reported and the stored one stays
+    # (endpoint_change_events keeps the last-known floor when the set empties).
+    data = {"endpoints": [
+        _ep("OpenAI", 0.5, 3.0, discount=0.5),
+        _ep("Azure", 1.1, 6.6, tag="azure/us"),
+    ]}
+    out = parse_endpoints(data, "openai")
+    assert (out["vendor_price_in"], out["vendor_price_out"]) == (1.0, 6.0)
+    assert out["floor_price_in"] is None and out["floor_provider"] is None
 
 
 # ── time-of-day schedules (pricing.overrides) ──────────────────────────────────

@@ -40,7 +40,7 @@ _HTTP_TIMEOUT = 60.0
 # year). The set below is what actually has frontier/recent-model coverage.
 _BENCHMARKS: dict[str, tuple[str, str, str]] = {
     # Epoch-run core (shared `mean_score` schema, 0-1 fraction)
-    "epoch_capabilities_index.csv": ("Epoch Capabilities Index", "index", "ECI Score"),
+    "epoch_capabilities_index/eci_scores.csv": ("Epoch Capabilities Index", "index", "eci"),
     "gpqa_diamond.csv":             ("GPQA Diamond", "%", "mean_score"),
     "math_level_5.csv":             ("MATH Level 5", "%", "mean_score"),
     "frontiermath.csv":             ("FrontierMath", "%", "mean_score"),
@@ -76,7 +76,10 @@ _FAMILIES: list[tuple[str, str]] = [
 _EFFORT_RE = re.compile(r"_[a-z0-9]+$", re.IGNORECASE)
 _EMBED_DATE_RE = re.compile(r"-?20\d\d-\d\d-\d\d")
 
-_ECI_FILE = "epoch_capabilities_index.csv"
+# Epoch moved the ECI into a folder in Sept 2026 (one row per model, clean `Model`
+# name, `eci`, `date`) and moved the version-to-model mapping to model_metadata.csv.
+_ECI_FILE = "epoch_capabilities_index/eci_scores.csv"
+_MODEL_METADATA_FILE = "model_metadata.csv"
 
 
 # ── Pure helpers (no network / no DB) ──────────────────────────────────────────
@@ -223,8 +226,8 @@ def parse_eci_roster(raw: bytes, days: int) -> list[dict]:
     Epoch's `notable_ai_models.csv` lags its benchmark hub, so major recent models
     (Gemini 3.5 Flash, Claude Opus 4.8, GPT-5.4 Mini, ...) are absent from it. The
     Epoch Capabilities Index file lists every model Epoch ranks, with a clean
-    `Model name`, organization, release date and accessibility. One entry per model
-    (effort variants collapse to one); `Unreleased` models are skipped. Pure and
+    `Model` name, organization, release `date` and accessibility. One entry per model
+    (duplicate names collapse to one); `Unreleased` models are skipped. Pure and
     unit-testable: takes the benchmark zip bytes.
     """
     archive = zipfile.ZipFile(io.BytesIO(raw))
@@ -235,8 +238,8 @@ def parse_eci_roster(raw: bytes, days: int) -> list[dict]:
     with archive.open(_ECI_FILE) as fh:
         reader = csv.DictReader(io.TextIOWrapper(fh, encoding="utf-8", errors="replace"))
         for row in reader:
-            name = (row.get("Model name") or "").strip()
-            pub = (row.get("Release date") or "").strip()
+            name = (row.get("Model") or "").strip()
+            pub = (row.get("date") or "").strip()
             access = (row.get("Model accessibility") or "").strip()
             if not name or access == "Unreleased" or not within_window(pub, days):
                 continue
@@ -359,6 +362,12 @@ def parse_openrouter_models(data: list[dict]) -> dict[str, dict]:
     """
     out: dict[str, dict] = {}
     for m in data:
+        # `:batch` is a service tier (the same model at about half price through an
+        # async queue), not a model. As its own key it created 40 thin "(batch)"
+        # model pages; collapsed into the base key its price would win the
+        # cheapest-input pick and its id would replace the base model's.
+        if (m.get("id") or "").endswith(":batch"):
+            continue
         key = openrouter_key(m.get("id") or "")
         if not key:
             continue
@@ -545,11 +554,12 @@ def parse_endpoints(data: dict, author: str) -> dict:
     ignored for the vendor (a temporarily deranked vendor endpoint still states
     the list price; requiring health made it flap) and the max-priced remaining
     vendor row wins as belt-and-braces against unlabeled discount tiers.
-    Floor = min input price over the CREDIBLE set: healthy
-    (`status >= 0`), undiscounted (`pricing.discount == 0`), quant >= 8-bit, and
-    context >= 50% of the model's largest offered context. Explicit fast-variant
-    exclusion is unnecessary: fast endpoints are the expensive duplicates, min
-    never picks them. Pure and unit-testable.
+    Floor = the cheapest row of the CREDIBLE set by blended price: healthy
+    (`status >= 0`), undiscounted (`pricing.discount == 0`), quant >= 8-bit,
+    context >= 50% of the model's largest offered context, and never above the
+    vendor's list price on either side. Explicit fast-variant exclusion is
+    unnecessary: fast endpoints are the expensive duplicates, min never picks
+    them. Pure and unit-testable.
     """
     rows = []
     for e in data.get("endpoints") or []:
@@ -624,6 +634,7 @@ def parse_endpoints(data: dict, author: str) -> dict:
         out["vendor_price_in"], out["vendor_price_out"] = v["list_in"], v["list_out"]
 
     native_context = max((r["context"] for r in rows if r["context"]), default=None)
+    list_in, list_out = out["vendor_price_in"], out["vendor_price_out"]
     credible = [
         r for r in rows
         if r["healthy"]
@@ -631,9 +642,19 @@ def parse_endpoints(data: dict, author: str) -> dict:
         and not (r["quant"] and _LOW_QUANT_RE.match(r["quant"]))
         and not (native_context and r["context"]
                  and r["context"] < native_context * _FLOOR_MIN_CONTEXT_FRACTION)
+        # Anyone can buy from the vendor, so a row dearer than its list price on
+        # either side is never "the cheapest". Some providers pair a near-zero
+        # input price with a steep output price (GLM-5.2 via Wafer, $0.06/$7.00
+        # against Z.AI's $1.40/$4.40 list), which an input-only pick took as the
+        # floor and published as "+75%" on 2026-10-14.
+        and not (list_in is not None and r["price_in"] > list_in + 1e-9)
+        and not (list_out is not None and r["price_out"] is not None
+                 and r["price_out"] > list_out + 1e-9)
     ]
     if credible:
-        f = min(credible, key=lambda r: (r["price_in"], r["price_out"] or 0))
+        # Ranked by the site's blended price (the mean of input and output, as on
+        # /models and the value rankings), so neither side alone decides.
+        f = min(credible, key=lambda r: ((r["price_in"] + (r["price_out"] or 0)) / 2, r["price_in"]))
         out.update({
             "floor_price_in": f["price_in"], "floor_price_out": f["price_out"],
             "floor_provider": f["provider"], "floor_quant": f["quant"],
@@ -862,22 +883,22 @@ def parse_aa_speed(data: list[dict]) -> dict[str, tuple[float | None, float | No
 
 
 def build_version_alias(raw: bytes) -> dict[str, str]:
-    """Map normalized benchmark `Model version` → normalized clean `Model name`.
+    """Map normalized benchmark `Model version` → normalized clean model name.
 
-    Built from the ECI file (the only one carrying both columns). Benchmark per-file
-    CSVs key on messy `Model version` strings ('deepseek/deepseek-v3.2', 'grok-4-3')
-    that don't normalize to the roster's clean `Model name` key ('DeepSeek-V3.2',
+    Built from model_metadata.csv (`model_version` → `model_group`). Benchmark
+    per-file CSVs key on messy `Model version` strings ('deepseek/deepseek-v3.2',
+    'grok-4-3') that don't normalize to the roster's clean name key ('DeepSeek-V3.2',
     'Grok 4.3 Beta'); this bridges them. Pure and unit-testable.
     """
     archive = zipfile.ZipFile(io.BytesIO(raw))
-    if _ECI_FILE not in archive.namelist():
+    if _MODEL_METADATA_FILE not in archive.namelist():
         return {}
     alias: dict[str, str] = {}
-    with archive.open(_ECI_FILE) as fh:
+    with archive.open(_MODEL_METADATA_FILE) as fh:
         reader = csv.DictReader(io.TextIOWrapper(fh, encoding="utf-8", errors="replace"))
         for row in reader:
-            vkey = normalize_key(row.get("Model version") or "")
-            nkey = normalize_key(row.get("Model name") or "")
+            vkey = normalize_key(row.get("model_version") or "")
+            nkey = normalize_key(row.get("model_group") or "")
             if vkey and nkey:
                 alias[vkey] = nkey
     return alias
@@ -903,7 +924,9 @@ def parse_benchmark_zip(
         with archive.open(fname) as fh:
             reader = csv.DictReader(io.TextIOWrapper(fh, encoding="utf-8", errors="replace"))
             for row in reader:
-                vkey = normalize_key(row.get("Model version") or "")
+                # The ECI file keys on the clean `Model` name; every other file
+                # on `Model version`.
+                vkey = normalize_key(row.get("Model version") or row.get("Model") or "")
                 nkey = alias.get(vkey, vkey)
                 if not nkey or nkey not in known_keys:
                     continue
@@ -994,13 +1017,33 @@ def _fetch(url: str, *, as_bytes: bool, headers: dict | None = None):
 
 # ── Pipeline steps ─────────────────────────────────────────────────────────────
 
+# Adopt an existing row into Epoch: set the key + Epoch's authoritative metadata so
+# benchmark syncs attach to it. `{where}` picks the row.
+_ADOPT_SQL = """
+    UPDATE models SET
+        epoch_key      = %(epoch_key)s,
+        name           = %(name)s,
+        vendor         = COALESCE(%(vendor)s, vendor),
+        family         = COALESCE(%(family)s, family),
+        released_at    = %(released_at)s,
+        parameters     = COALESCE(%(parameters)s, parameters),
+        accessibility  = COALESCE(%(accessibility)s, accessibility),
+        is_open_weight = COALESCE(%(is_open_weight)s, is_open_weight),
+        description    = COALESCE(%(description)s, description),
+        primary_url    = COALESCE(%(primary_url)s, primary_url),
+        updated_at     = NOW()
+    WHERE {where}
+"""
+
+
 def sync_models(conn: psycopg.Connection) -> int:
     """Upsert the last year's models into `models`.
 
     Roster = notable_ai_models.csv UNION the ECI-scored models missing from it
     (the notable list lags the benchmark hub; without the union, major models like
     Gemini 3.5 Flash / Claude Opus 4.8 never appear). Notable rows win on a name
-    clash (richer metadata: parameters, source link).
+    clash (richer metadata: parameters, source link). A roster model already in
+    the registry under another spelling adopts that row instead of adding a page.
     """
     text = _fetch(settings.epoch_models_url, as_bytes=False)
     if text is None:
@@ -1037,8 +1080,36 @@ def sync_models(conn: psycopg.Connection) -> int:
         else:
             seen_slugs[slug] = 1
 
+    # Slug adoption (below) misses a model that is already here under another
+    # spelling: a row OpenRouter created before Epoch scored it ('Qwen3.8 27B'
+    # against Epoch's 'Qwen 3.8 27B'), or Epoch's own earlier name for it ('Qwen 3.7
+    # Max', now 'Qwen3.7-Max'). Each got a second page (2026-10-16 health check),
+    # so a key Epoch hasn't used before adopts the row with the same join key.
+    with conn.cursor() as cur:
+        cur.execute("SELECT id, epoch_key, name FROM models")
+        existing = cur.fetchall()
+    epoch_keys = {k for (_id, k, _n) in existing if k}
+    by_key = {normalize_key(k or n): mid for (mid, k, n) in existing}
+
     count = 0
+    done: set[str] = set()
     for r in rows:
+        key = normalize_key(r["epoch_key"])
+        if key in done:
+            continue  # two spellings in Epoch's own roster: the first one wins
+        done.add(key)
+        if r["epoch_key"] not in epoch_keys and key in by_key:
+            try:
+                with conn.cursor() as cur:
+                    cur.execute(_ADOPT_SQL.format(where="id = %(adopt_id)s"),
+                                {**r, "adopt_id": by_key[key]})
+                conn.commit()
+                count += 1
+                log.info("models.adopted", slug=r["slug"], name=r["name"])
+            except Exception as exc:
+                conn.rollback()
+                log.warning("models.adopt_failed", slug=r["slug"], error=str(exc))
+            continue
         try:
             with conn.cursor() as cur:
                 cur.execute(
@@ -1073,24 +1144,7 @@ def sync_models(conn: psycopg.Connection) -> int:
             # slug clash between two Epoch models; skip as before.
             try:
                 with conn.cursor() as cur:
-                    cur.execute(
-                        """
-                        UPDATE models SET
-                            epoch_key      = %(epoch_key)s,
-                            name           = %(name)s,
-                            vendor         = COALESCE(%(vendor)s, vendor),
-                            family         = COALESCE(%(family)s, family),
-                            released_at    = %(released_at)s,
-                            parameters     = COALESCE(%(parameters)s, parameters),
-                            accessibility  = COALESCE(%(accessibility)s, accessibility),
-                            is_open_weight = COALESCE(%(is_open_weight)s, is_open_weight),
-                            description    = COALESCE(%(description)s, description),
-                            primary_url    = COALESCE(%(primary_url)s, primary_url),
-                            updated_at     = NOW()
-                        WHERE slug = %(slug)s AND epoch_key IS NULL
-                        """,
-                        r,
-                    )
+                    cur.execute(_ADOPT_SQL.format(where="slug = %(slug)s AND epoch_key IS NULL"), r)
                     adopted = cur.rowcount
                 conn.commit()
                 if adopted:
@@ -1207,11 +1261,18 @@ def sync_benchmarks(conn: psycopg.Connection) -> int:
         return 0
 
     try:
+        names = set(zipfile.ZipFile(io.BytesIO(raw)).namelist())
         alias = build_version_alias(raw)
         scores = parse_benchmark_zip(raw, set(key_to_id), alias)
     except Exception as exc:
         log.warning("benchmarks.parse_failed", error=str(exc))
         return 0
+    missing = sorted((set(_BENCHMARKS) | {_MODEL_METADATA_FILE}) - names)
+    if missing:
+        # Epoch reorganizes this archive without notice. When the ECI file moved
+        # into a folder (Sept 2026) every lookup failed silently, and no model got
+        # a new ECI score for about a month.
+        log.warning("benchmarks.files_missing", files=missing)
 
     existing = _existing_benchmarks(conn)
     count = 0

@@ -32,18 +32,40 @@ def test_a_healthy_feed_is_parsed(monkeypatch):
     assert [a.source_url for a in rss.ingest_rss(_source())] == ["https://example.com/a"]
 
 
+_GNEWS_FEED = b"""<?xml version="1.0"?><rss version="2.0"><channel><title>Google News</title>
+<item><title>Claude Opus 5.5 vs Qwen 4 Max: One Vendor Sells You Speed - OrcaRouter</title>
+<link>https://news.google.com/rss/articles/1</link><pubDate>Thu, 15 Oct 2026 12:00:00 GMT</pubDate>
+<source url="https://orcarouter.ai">OrcaRouter</source></item>
+<item><title>AI in Chemicals Market Size, Share, Trends and Forecast to 2030 at 4% CAGR - GlobeNewswire</title>
+<link>https://news.google.com/rss/articles/2</link><pubDate>Thu, 15 Oct 2026 12:00:00 GMT</pubDate>
+<source url="https://www.globenewswire.com">GlobeNewswire</source></item>
+<item><title>New Book 'AI Made Simple' Makes Artificial Intelligence Easier to Understand - EIN Presswire</title>
+<link>https://news.google.com/rss/articles/4</link><pubDate>Thu, 15 Oct 2026 12:00:00 GMT</pubDate>
+<source url="https://www.einpresswire.com">EIN Presswire</source></item>
+<item><title>Anthropic ships Claude Opus 5.5 - Reuters</title>
+<link>https://news.google.com/rss/articles/3</link><pubDate>Thu, 15 Oct 2026 12:00:00 GMT</pubDate>
+<source url="https://www.reuters.com">Reuters</source></item>
+</channel></rss>"""
+
+
+def test_blocked_publisher_and_market_reports_are_dropped(monkeypatch):
+    monkeypatch.setattr(rss.feedparser, "parse", lambda url, **kw: _real_parse(_GNEWS_FEED))
+    kept = rss.ingest_rss(_source("https://news.google.com/rss/search?q=claude"))
+    assert [(a.source_name, a.title) for a in kept] == [("Reuters", "Anthropic ships Claude Opus 5.5")]
+
+
 def test_a_blocked_feed_is_a_warning_not_an_empty_success(monkeypatch):
     # A block page used to parse into zero entries and log an info-level count=0
     monkeypatch.setattr(rss.feedparser, "parse", lambda url, **kw: _failed(status=503))
     with structlog.testing.capture_logs() as logs:
-        assert rss.ingest_rss(_source()) == []
+        assert rss.ingest_rss(_source()) is None
     assert [(e["event"], e["log_level"], e["status"]) for e in logs] == [("rss.feed_failed", "warning", 503)]
 
 
 def test_a_timeout_is_logged_and_skipped(monkeypatch):
     monkeypatch.setattr(rss.feedparser, "parse", lambda url, **kw: _failed(exc=URLError(socket.timeout("timed out"))))
     with structlog.testing.capture_logs() as logs:
-        assert rss.ingest_rss(_source()) == []
+        assert rss.ingest_rss(_source()) is None
     assert [e["event"] for e in logs] == ["rss.feed_failed"]
     assert "timed out" in logs[0]["error"]
 

@@ -30,7 +30,12 @@ RSS_SOURCES: list[Source] = [
         "Meta AI Blog", "Meta", "https://engineering.fb.com/feed/",
         "rss", 10, "research-papers", ai_filter=True,
     ),
-    Source("Microsoft AI Blog", "Microsoft", "https://blogs.microsoft.com/ai/feed/", "rss", 10, "product-launches"),
+    # blogs.microsoft.com/ai returns 410 Gone (last item 2026-04-16); Microsoft's
+    # AI news moved to the Source newsroom's AI topic.
+    Source(
+        "Microsoft AI Blog", "Microsoft", "https://news.microsoft.com/source/topics/ai/feed/",
+        "rss", 10, "product-launches",
+    ),
     Source(
         "Mistral AI News", "Mistral",
         "https://news.google.com/rss/search?q=mistral+AI&hl=en-US&gl=US&ceid=US:en",
@@ -47,7 +52,8 @@ RSS_SOURCES: list[Source] = [
         "The Verge", "The Verge", "https://www.theverge.com/rss/index.xml",
         "rss", 5, "company-news", ai_filter=True,
     ),
-    Source("VentureBeat AI", "VentureBeat", "https://venturebeat.com/category/ai/feed/", "rss", 5, "company-news"),
+    # VentureBeat dropped 2026-10-16: its feed answers automated readers with a
+    # 429 bot check (last item 2026-08-27).
     # Tier 4 — Aggregators (authority 3)
     Source(
         "Google News: AI", "Google News",
@@ -112,7 +118,7 @@ RSS_SOURCES: list[Source] = [
     ),
     # AI Publications
     Source("The Decoder", "The Decoder", "https://the-decoder.com/feed/", "rss", 7, "company-news"),
-    Source("Synced Review", "Synced Review", "https://syncedreview.com/feed/", "rss", 5, "research-papers"),
+    # Synced Review dropped 2026-10-16: no new post since 2025-08-14.
     Source(
         "MIT Technology Review", "MIT Technology Review",
         "https://www.technologyreview.com/feed/",
@@ -125,7 +131,12 @@ RSS_SOURCES: list[Source] = [
     ),
     Source("Wired AI", "Wired", "https://www.wired.com/feed/tag/ai/latest/rss", "rss", 5, "company-news"),
     Source("IEEE Spectrum AI", "IEEE Spectrum", "https://spectrum.ieee.org/feeds/topic/artificial-intelligence.rss", "rss", 5, "research-papers"),
-    Source("The Register AI", "The Register", "https://www.theregister.com/software/ai_ml/headlines.atom", "rss", 5, "company-news"),
+    # The AI/ML section feed went stale (1 item in 14 days by 2026-10-16) while
+    # the site kept publishing, so read the main feed and keep the AI stories.
+    Source(
+        "The Register AI", "The Register", "https://www.theregister.com/headlines.atom",
+        "rss", 5, "company-news", ai_filter=True,
+    ),
     Source(
         "Rest of World", "Rest of World",
         "https://restofworld.org/feed/latest",

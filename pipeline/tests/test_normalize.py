@@ -1,12 +1,16 @@
 from ainews.processing.normalize import (
+    build_normalized_article,
     categorize,
     is_ai_relevant,
+    is_english,
     is_financial_noise,
     is_github_rolling_build,
+    is_market_report,
     normalize_excerpt,
     strip_html,
     truncate_words,
 )
+from ainews.sources import Source
 
 
 class TestIsFinancialNoise:
@@ -148,3 +152,42 @@ class TestIsGithubRollingBuild:
 
     def test_name_differs_from_tag(self):
         assert not is_github_rolling_build("nightly", "Release v2.0")
+
+
+class TestIsEnglish:
+    def test_short_cjk_title_is_not_english(self):
+        # 6 space-separated "words", so the short-text default used to keep it
+        assert not is_english("Claude Haiku 5.5 对比 Sakana Namazu：通才还是专才？")
+        assert not is_english("Stability AI 完成 7600 万美元 B 轮融资")
+
+    def test_other_scripts(self):
+        assert not is_english("Alibaba ने लॉन्च किया अब तक का सबसे बड़ा AI Model")
+
+    def test_scattered_glyphs_stay_english(self):
+        assert is_english("This Is the Worst Possible Time for OpenAI to BfЖ7!م#2猫$9&क")
+
+    def test_short_english_and_accents_stay(self):
+        assert is_english("Claude partial outage")
+        assert is_english("Mistral AI, Luxembourg’s 10-million-euro bet with Café Société")
+
+
+class TestIsMarketReport:
+    def test_market_research_templates(self):
+        assert is_market_report("Artificial Intelligence (AI) in Textile Market Size, Share, Trends and Forecast to 2030 at 33.6% CAGR")
+        assert is_market_report("AI Fridge Market to Reach $6.27 Billion by 2030: Key Trends and Growth Drivers")
+        assert is_market_report("AI Curtains Global Market Report 2026")
+        assert is_market_report("Market Report on Artificial Intelligence (AI)-Driven Compliance Tools Analyzes Market Trends")
+
+    def test_market_news_passes(self):
+        assert not is_market_report("Foxconn third-quarter revenue soars on AI demand, beats market forecast")
+        assert not is_market_report("AI Chipmaker Biren Taps Market Again in $515 Million Share Sale")
+        assert not is_market_report("DeepSeek has 64% market share")
+
+
+class TestBuildNormalizedArticle:
+    def test_title_entities_are_decoded(self):
+        # The Verge double-encodes, so feedparser hands over a literal entity
+        src = Source("The Verge", "The Verge", "https://example.com/feed", "rss", 6, "company-news")
+        a = build_normalized_article("Eight states sue OpenAI, saying ChatGPT isn&#8217;t safe for kids",
+                                     "https://example.com/a", None, None, "2026-10-14T12:00:00+00:00", src)
+        assert a.title == "Eight states sue OpenAI, saying ChatGPT isn’t safe for kids"

@@ -1,4 +1,6 @@
+import html
 import re
+import unicodedata
 from datetime import datetime, timezone
 from html.parser import HTMLParser
 
@@ -100,16 +102,36 @@ FINANCIAL_NOISE_PATTERNS = [
 ]
 
 
+def _has_non_latin_run(text: str) -> bool:
+    """True when two letters in a row come from a non-Latin script (CJK, Hangul,
+    Cyrillic, Devanagari, ...). Lone symbols don't count, so a joke headline with
+    scattered glyphs stays English."""
+    run = 0
+    for ch in text:
+        if ch.isalpha() and "LATIN" not in unicodedata.name(ch, ""):
+            run += 1
+            if run >= 2:
+                return True
+        else:
+            run = 0
+    return False
+
+
 def is_english(text: str) -> bool:
     """Return True if text is likely English.
 
     langdetect is unreliable on short text (< ~15 words) and mis-fires often on
     technical AI titles full of proper nouns. Strategy:
+    - Non-Latin script → not English, at any length. CJK has no spaces, so
+      "Claude Haiku 5.5 对比 Sakana Namazu：通才还是专才？" counted 6 words and
+      passed as short (OrcaRouter, 2026-10-11).
     - Short text → assume English (safe default).
     - Longer text → run langdetect; reject only if confidently non-English (score > 0.98).
     This keeps false-positive deletions near zero while still catching long
     Spanish/French/German articles like Bloomberg's international content.
     """
+    if _has_non_latin_run(text):
+        return False
     words = text.split()
     if len(words) < 10:
         return True  # Too short to classify reliably — keep it
@@ -127,6 +149,24 @@ def is_english(text: str) -> bool:
 def is_financial_noise(title: str) -> bool:
     t = title.lower()
     return any(p in t for p in FINANCIAL_NOISE_PATTERNS)
+
+
+# Paid market-research releases ("AI in Textile Market Size, Share, Trends and
+# Forecast to 2030 at 33.6% CAGR"), syndicated by GlobeNewswire, MarketsandMarkets
+# and Yahoo Finance as well as EIN News: about 90 in 120 days. Their shared "AI
+# market" wording pulled real stories into one cluster (2026-10-16 health check).
+_MARKET_REPORT_RE = re.compile(
+    r"\bcagr\b"
+    r"|\bmarket\s+(size|research|report|study|insights|segmentation)\b"
+    r"|\bmarket\s+competitive\s+landscape\b"
+    r"|\bglobal\s+(\w+\s+){0,3}market\s+report\b"
+    r"|\bmarket\b.{0,80}?\b(by|through|to)\s+20[3-4]\d\b",
+    re.IGNORECASE,
+)
+
+
+def is_market_report(title: str) -> bool:
+    return bool(_MARKET_REPORT_RE.search(title))
 
 
 def is_github_rolling_build(tag_name: str, release_name: str | None) -> bool:
@@ -211,7 +251,9 @@ def build_normalized_article(
     published_at: str | int | float | datetime | None,
     source: Source,
 ) -> NormalizedArticle | None:
-    title = (title or "").strip()
+    # The Verge's feed double-encodes ("don&#8217;t"), so one decode left 43
+    # headlines showing a literal entity (2026-10-16 health check).
+    title = html.unescape((title or "").strip())
     if not title or not url:
         return None
 

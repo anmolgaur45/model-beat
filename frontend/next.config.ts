@@ -54,6 +54,17 @@ const nextConfig: NextConfig = {
   // fetches, dead buttons. Dev-only; ignored in production. Update the IP if your
   // LAN address changes (see the "Network:" URL printed by `pnpm dev`).
   allowedDevOrigins: ['192.168.0.103'],
+  // Model pages retired on 2026-10-16 (health check H7). The 40 "(batch)" rows
+  // were OpenRouter's half-price batch tier of a model, not a model; the three
+  // pairs were one model under two spellings. Each old URL keeps its links.
+  async redirects() {
+    return [
+      { source: '/models/:base([a-z0-9-]+)-batch', destination: '/models/:base', permanent: true },
+      { source: '/models/qwen-3-8-27b', destination: '/models/qwen3-8-27b', permanent: true },
+      { source: '/models/qwen3-7-max', destination: '/models/qwen-3-7-max', permanent: true },
+      { source: '/models/namazu', destination: '/models/sakana-namazu', permanent: true },
+    ]
+  },
   async headers() {
     return [
       {

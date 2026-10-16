@@ -178,6 +178,8 @@ ALTER TABLE models ADD COLUMN IF NOT EXISTS price_out         FLOAT;  -- USD per
 ALTER TABLE models ADD COLUMN IF NOT EXISTS context_window    INT;
 ALTER TABLE models ADD COLUMN IF NOT EXISTS input_modalities  TEXT;
 ALTER TABLE models ADD COLUMN IF NOT EXISTS output_modalities TEXT;
+-- One row per OpenRouter model (2026-10-17): duplicate rows forked a model's page.
+CREATE UNIQUE INDEX IF NOT EXISTS models_openrouter_id_key ON models (openrouter_id);
 
 -- Phase O5: benchmark provenance (epoch authoritative, aa fills gaps).
 ALTER TABLE model_benchmarks ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'epoch';

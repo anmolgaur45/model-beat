@@ -1,3 +1,5 @@
+from datetime import datetime, timedelta, timezone
+
 import httpx
 import structlog
 import psycopg
@@ -9,7 +11,7 @@ from .sources import RSS_SOURCES
 from .ingestors.rss import ingest_rss
 from .ingestors.hackernews import ingest_hn
 from .ingestors.github import ingest_github
-from .processing.embeddings import embed_pending, prune_old_embeddings
+from .processing.embeddings import EMBEDDING_RETENTION_DAYS, embed_pending, prune_old_embeddings
 from .processing.scoring import score_pending
 from .processing.clustering import cluster_pending
 from .processing.summarize import summarize_pending
@@ -29,11 +31,28 @@ log = structlog.get_logger()
 def ingest_all() -> list[NormalizedArticle]:
     all_articles: list[NormalizedArticle] = []
 
+    # Google News throttles Cloud Run now and then: in the 12:00 UTC run on
+    # 2026-10-16 all 14 search feeds timed out within a minute, while the day's
+    # other runs were clean. After one fails, the rest wait for the next run
+    # instead of each burning its timeout; their ~100-item backlog arrives then.
+    google_down = False
+    skipped = 0
     for source in RSS_SOURCES:
+        google = "news.google.com" in source.feed_url
+        if google and google_down:
+            skipped += 1
+            continue
         try:
-            all_articles.extend(ingest_rss(source))
+            articles = ingest_rss(source)
         except Exception as exc:
             log.warning("ingest.source_failed", source=source.name, error=str(exc))
+            continue
+        if articles is None:
+            google_down = google_down or google
+            continue
+        all_articles.extend(articles)
+    if skipped:
+        log.warning("ingest.google_news_skipped", feeds=skipped)
 
     for fn, label in [(ingest_hn, "hackernews"), (ingest_github, "github")]:
         try:
@@ -67,6 +86,21 @@ def dedup_by_title(articles: list[NormalizedArticle]) -> list[NormalizedArticle]
         seen.add(key)
         result.append(article)
     return result
+
+
+def drop_backdated(
+    articles: list[NormalizedArticle], days: int
+) -> tuple[list[NormalizedArticle], int]:
+    """Drop articles published more than `days` ago.
+
+    Feeds re-list old posts (Anthropic's and OpenAI's back catalogues), and an
+    article older than the embedding floor is never embedded or clustered: 487
+    such rows had piled up, published up to four years before they were
+    ingested (2026-10-16 health check).
+    """
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    kept = [a for a in articles if datetime.fromisoformat(a.published_at) >= cutoff]
+    return kept, len(articles) - len(kept)
 
 
 def filter_existing(conn: psycopg.Connection, articles: list[NormalizedArticle]) -> list[NormalizedArticle]:
@@ -174,10 +208,19 @@ def notify_revalidate() -> None:
         log.warning("pipeline.revalidate_failed", error=str(exc))
 
 
+def add_severity(_logger, method_name: str, event_dict: dict) -> dict:
+    """Cloud Logging reads `severity`, not structlog's `level`: without it 1,358 of
+    a day's 1,394 entries landed as DEFAULT, so a severity filter or log-based
+    alert never saw a warning (2026-10-16 health check)."""
+    event_dict["severity"] = str(event_dict.get("level") or method_name).upper()
+    return event_dict
+
+
 def main() -> None:
     structlog.configure(
         processors=[
             structlog.stdlib.add_log_level,
+            add_severity,
             structlog.processors.TimeStamper(fmt="iso"),
             structlog.processors.JSONRenderer(),
         ]
@@ -193,6 +236,10 @@ def main() -> None:
 
         unique = dedup_by_title(dedup_by_url(raw))
         log.info("pipeline.deduped", unique=len(unique))
+
+        unique, backdated = drop_backdated(unique, EMBEDDING_RETENTION_DAYS)
+        if backdated:
+            log.info("pipeline.backdated_skipped", count=backdated)
 
         new_articles = filter_existing(conn, unique)
         log.info("pipeline.new", new=len(new_articles), skipped=len(unique) - len(new_articles))

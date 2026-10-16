@@ -283,6 +283,55 @@ def compute_merge_groups(
     return [g for g in groups.values() if len(g) >= 2]
 
 
+def recheck_group(
+    members: list[int],
+    canonical: int,
+    centroids: list[np.ndarray],
+    sizes: list[int],
+    arxiv: list[bool],
+    news_threshold: float,
+    confirmed: set[frozenset[int]] | None = None,
+) -> tuple[list[tuple[int, float, str]], list[tuple[int, float]]]:
+    """Admit a merge group's members one at a time, nearest first, each only if it is
+    within threshold of the centroid of everything admitted so far.
+
+    Union-find is transitive: A~B and B~C put C in A's group even when C is nowhere
+    near A, and the merged cluster then drifts toward whatever it absorbed. That is
+    how two stories became 24- and 17-article blobs of unrelated coverage (2026-10-16
+    health check). A member the LLM confirmed as the same event as an admitted member
+    may sit up to the adjudication band's upper bound, as in `ambiguous_pairs`.
+    Returns (admitted [(index, distance, "auto"|"llm")], rejected [(index, distance)]).
+    Pure and unit-testable.
+    """
+    def dist(a: np.ndarray, b: np.ndarray) -> float:
+        na, nb = float(np.linalg.norm(a)), float(np.linalg.norm(b))
+        return 1.0 if na < 1e-9 or nb < 1e-9 else 1.0 - float(a @ b) / (na * nb)
+
+    confirmed = confirmed or set()
+    group = [canonical]
+    total = centroids[canonical] * sizes[canonical]
+    admitted: list[tuple[int, float, str]] = []
+    rejected: list[tuple[int, float]] = []
+    rest = sorted((m for m in members if m != canonical),
+                  key=lambda m: dist(centroids[m], centroids[canonical]))
+    for m in rest:
+        d = dist(centroids[m], total)
+        thr = settings.cluster_arxiv_threshold if (arxiv[m] and arxiv[canonical]) else news_threshold
+        if d < thr:
+            reason = "auto"
+        elif d < settings.cluster_merge_high_threshold and any(
+            frozenset((m, g)) in confirmed for g in group
+        ):
+            reason = "llm"
+        else:
+            rejected.append((m, d))
+            continue
+        admitted.append((m, d, reason))
+        group.append(m)
+        total = total + centroids[m] * sizes[m]
+    return admitted, rejected
+
+
 def ambiguous_pairs(
     centroids: list[np.ndarray],
     times: list[float],
@@ -376,7 +425,8 @@ def merge_close_clusters(
 
     The greedy article-by-article join can split one story into several clusters
     when its coverage is internally spread (see tasks/f1-findings.md). This pass
-    merges clusters whose centroids are within threshold. Bounded to the backfill
+    merges clusters whose centroids are within threshold, re-checking each group
+    member against the merged centroid (`recheck_group`). Bounded to the backfill
     window. Returns the surviving cluster ids that absorbed others.
     """
     cutoff = datetime.now(timezone.utc) - timedelta(days=_BACKFILL_DAYS)
@@ -438,12 +488,22 @@ def merge_close_clusters(
     if not groups:
         return set()
 
+    confirmed = {frozenset(edge) for edge in extra_edges}
+    size_list = [sizes[cid] for cid in order]
     survivors: set[str] = set()
     for grp in groups:
-        members = [order[i] for i in grp]
         # canonical = largest cluster (earliest on tie) absorbs the rest
-        canonical = max(members, key=lambda c: (sizes[c], -meta[c].timestamp()))
-        others = [c for c in members if c != canonical]
+        canon_i = max(grp, key=lambda i: (size_list[i], -times[i]))
+        canonical = order[canon_i]
+        admitted, rejected = recheck_group(
+            grp, canon_i, centroids, size_list, arxiv_dom, news_threshold, confirmed
+        )
+        for i, d in rejected:
+            log.info("clustering.merge_rejected", canonical=canonical[:8],
+                     cluster=order[i][:8], distance=round(d, 3))
+        if not admitted:
+            continue
+        others = [order[i] for i, _d, _r in admitted]
         with conn.cursor() as cur:
             for o in others:
                 cur.execute(
@@ -465,7 +525,11 @@ def merge_close_clusters(
                 (canonical,),
             )
         survivors.add(canonical)
-        log.info("clustering.merged", canonical=canonical[:8], absorbed=len(others))
+        # One line per absorbed cluster, with why it qualified: the health check
+        # could not tell a threshold merge from an LLM-confirmed one.
+        for i, d, reason in admitted:
+            log.info("clustering.merged", canonical=canonical[:8], absorbed=order[i][:8],
+                     distance=round(d, 3), reason=reason)
 
     conn.commit()
     for cid in survivors:

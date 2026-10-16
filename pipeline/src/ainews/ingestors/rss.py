@@ -7,7 +7,9 @@ import feedparser
 import structlog
 
 from ..models import NormalizedArticle
-from ..processing.normalize import build_normalized_article, is_financial_noise, is_english, is_ai_relevant
+from ..processing.normalize import (
+    build_normalized_article, is_financial_noise, is_english, is_ai_relevant, is_market_report,
+)
 from ..sources import Source
 
 log = structlog.get_logger()
@@ -15,6 +17,12 @@ log = structlog.get_logger()
 # Third-party articles arriving via Google News search feeds carry the
 # aggregator tier, not the feed's configured authority
 _AGGREGATOR_AUTHORITY = 3.0
+
+# Publishers dropped whatever the feed (2026-10-16 health check). OrcaRouter, a
+# model router, posts templated "X vs Y" pages that Google News surfaces as news:
+# 42 in October 2026, linked into 12 model pages' news sections. EIN News is a
+# paid press-release wire: market-research reports and promotional releases only.
+_BLOCKED_PUBLISHERS = {"orcarouter", "ein news", "ein presswire", "einnews.com"}
 
 _USER_AGENT = "AI-News-Calendar/1.0 (news aggregator)"
 # Fetches used to run with no timeout and no status check, so a blocked feed
@@ -65,12 +73,14 @@ def publisher_matches_org(publisher: str, organization: str) -> bool:
     return o in p or p in o
 
 
-def ingest_rss(source: Source) -> list[NormalizedArticle]:
+def ingest_rss(source: Source) -> list[NormalizedArticle] | None:
+    """A feed's articles, or None when the feed itself failed (fetch error or
+    HTTP failure), so the caller can tell a dead feed from an empty one."""
     try:
         feed = fetch_feed(source.feed_url, feed_timeout(source.feed_url))
     except Exception as exc:
         log.warning("rss.fetch_failed", source=source.name, error=str(exc))
-        return []
+        return None
 
     status = feed.get("status")
     if (status is not None and status >= 400) or (feed.bozo and not feed.entries):
@@ -80,7 +90,7 @@ def ingest_rss(source: Source) -> list[NormalizedArticle]:
             status=status,
             error=repr(feed.get("bozo_exception")) if feed.bozo else None,
         )
-        return []
+        return None
 
     results: list[NormalizedArticle] = []
 
@@ -123,10 +133,12 @@ def ingest_rss(source: Source) -> list[NormalizedArticle]:
         # publisher (citation correctness) and only keep the feed's authority when
         # the publisher IS the org the feed tracks (e.g. anthropic.com site: feeds)
         if publisher:
+            if publisher.lower() in _BLOCKED_PUBLISHERS:
+                continue
             article.source_name = publisher
             if not publisher_matches_org(publisher, source.organization):
                 article.significance_base = min(article.significance_base, _AGGREGATOR_AUTHORITY)
-        if is_financial_noise(article.title):
+        if is_financial_noise(article.title) or is_market_report(article.title):
             continue
         if not is_english(article.title):
             continue

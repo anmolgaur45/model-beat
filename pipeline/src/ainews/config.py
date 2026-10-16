@@ -65,11 +65,12 @@ class Settings(BaseSettings):
     openrouter_new_model_days: int = 60
     # Price tracking v2 (Phase U): per-provider endpoint data. /endpoints is one
     # call PER model, so each run sweeps only the `endpoint_sweep_batch` oldest-
-    # synced models (~12 x 8 runs/day covers all ~80 priced models daily) with a
-    # politeness delay between calls. Raise the batch, not the job schedule, if
-    # faster coverage is ever needed.
+    # synced models with a politeness delay between calls. 30 x 8 runs/day covers
+    # the ~200 priced models about daily, so a real move (two matching samples)
+    # publishes in about two days; 12 took about five once the registry outgrew 80
+    # models. Raise the batch, not the job schedule, if faster coverage is needed.
     openrouter_endpoints_url: str = "https://openrouter.ai/api/v1/models/{id}/endpoints"
-    endpoint_sweep_batch: int = 12
+    endpoint_sweep_batch: int = 30
     endpoint_sweep_delay_seconds: float = 0.5
     # Artificial Analysis free API (Phase O5): individual benchmark scores for
     # models Epoch hasn't scored yet. Fills gaps only — Epoch stays authoritative.

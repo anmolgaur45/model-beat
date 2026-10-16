@@ -5,8 +5,9 @@ import type { ModelEvent } from '@/types/article'
 
 // Phase V: the change feed as RSS — the zero-infra "responsive signal" for
 // power users (no accounts, no email). Summaries are self-contained.
-// Built once per deploy (zero ISR writes, 2026-07-14); 3h redeploys refresh it.
-export const dynamic = 'force-static'
+// Rendered per request behind a 1h CDN cache (next.config.ts). force-static
+// froze it at the build, and builds land days apart.
+export const dynamic = 'force-dynamic'
 
 function esc(s: string): string {
   return s
@@ -18,12 +19,9 @@ function esc(s: string): string {
 
 export async function GET() {
   const caller = appRouter.createCaller(createContext())
-  let events: ModelEvent[] = []
-  try {
-    events = await caller.articles.getModelEvents({ days: 30 })
-  } catch {
-    // empty feed beats a 500; the next revalidation retries
-  }
+  // No catch: on a DB error the 500 lets the CDN keep serving the last good
+  // feed (stale-if-error), where an empty feed would have been cached as real.
+  const events: ModelEvent[] = await caller.articles.getModelEvents({ days: 30 })
 
   const items = events
     .map((e) => {
@@ -52,7 +50,7 @@ ${items}
   return new Response(xml, {
     headers: {
       'Content-Type': 'application/rss+xml; charset=utf-8',
-      'Cache-Control': 'public, s-maxage=1800, stale-while-revalidate=3600',
+      'Cache-Control': 'public, max-age=1800',
     },
   })
 }

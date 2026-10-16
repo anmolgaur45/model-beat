@@ -9,9 +9,10 @@ import type { Model } from '@/types/article'
 import { CompareTable } from '@/components/CompareTable'
 import { NavBar } from '@/components/NavBar'
 import { comparePairs, comparePairKeys, pairKey, pairModelNames } from '@/lib/comparePairs'
+import { BUCKETS } from '@/lib/modelBuckets'
 
-// Static at build; the pipeline-triggered redeploy every 3h keeps these
-// current (zero ISR writes, 2026-07-14).
+// Prerendered at build; the pipeline's per-run revalidate refreshes the curated
+// set (api/revalidate).
 
 const SITE = SITE_URL
 const SLUG_RE = /^[a-z0-9-]+$/
@@ -41,26 +42,44 @@ function fmtContext(n: number | null): string {
 }
 const eci = (m: Model) => m.headline_score ?? null
 
+// 93 → "93rd", 11 → "11th".
+function ordinal(n: number): string {
+  const v = n % 100
+  const s = v >= 11 && v <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] ?? 'th'
+  return `${n}${s}`
+}
+
+// Coding benchmarks both models were scored on. The coding answer used to name
+// SWE-bench and Terminal-Bench for every pair, including pairs that have neither.
+const CODING_BENCHMARKS = BUCKETS.find((b) => b.key === 'coding')?.benchmarks ?? []
+function sharedCodingBenchmarks(a: Model, b: Model): string[] {
+  const names = (m: Model) => new Set((m.benchmarks ?? []).map((x) => x.benchmark))
+  const na = names(a), nb = names(b)
+  return CODING_BENCHMARKS.filter((n) => na.has(n) && nb.has(n))
+}
+
 // Data-driven verdict bullets — only the differences we can actually measure.
+// Ties are judged on the values as displayed (rounded ECI, cents, "1M"), so a
+// line never calls one model ahead while printing the same number twice.
 function verdict(a: Model, b: Model): string[] {
   const out: string[] = []
   const ea = eci(a), eb = eci(b)
-  if (ea != null && eb != null && ea !== eb) {
+  if (ea != null && eb != null && Math.round(ea) !== Math.round(eb)) {
     const w = ea > eb ? a : b
     out.push(`${w.name} leads on overall intelligence (ECI ${Math.round(Math.max(ea, eb))} vs ${Math.round(Math.min(ea, eb))}).`)
   }
-  if (a.price_in != null && b.price_in != null && a.price_in !== b.price_in) {
+  if (a.price_in != null && b.price_in != null && a.price_in.toFixed(2) !== b.price_in.toFixed(2)) {
     const c = a.price_in < b.price_in ? a : b
-    out.push(`${c.name} is cheaper on input tokens — $${Math.min(a.price_in, b.price_in).toFixed(2)} vs $${Math.max(a.price_in, b.price_in).toFixed(2)} per 1M.`)
+    out.push(`${c.name} is cheaper on input tokens: $${Math.min(a.price_in, b.price_in).toFixed(2)} vs $${Math.max(a.price_in, b.price_in).toFixed(2)} per 1M.`)
   }
-  if (a.context_window && b.context_window && a.context_window !== b.context_window) {
+  if (a.context_window && b.context_window && fmtContext(a.context_window) !== fmtContext(b.context_window)) {
     const c = a.context_window > b.context_window ? a : b
     out.push(`${c.name} has a larger context window (${fmtContext(Math.max(a.context_window, b.context_window))} vs ${fmtContext(Math.min(a.context_window, b.context_window))} tokens).`)
   }
   const ca = a.buckets?.coding, cb = b.buckets?.coding
   if (ca != null && cb != null && ca !== cb) {
     const c = ca > cb ? a : b
-    out.push(`${c.name} ranks higher for coding (${Math.max(ca, cb)}th vs ${Math.min(ca, cb)}th percentile).`)
+    out.push(`${c.name} ranks higher for coding (${ordinal(Math.max(ca, cb))} vs ${ordinal(Math.min(ca, cb))} percentile).`)
   }
   return out
 }
@@ -73,29 +92,39 @@ function compareFaq(a: Model, b: Model): { q: string; a: string }[] {
     const hi = ea >= eb ? a : b, lo = ea >= eb ? b : a
     faq.push({
       q: `Is ${a.name} better than ${b.name}?`,
-      a: `On Epoch AI's Capabilities Index, ${hi.name} scores higher (${Math.round(Math.max(ea, eb))}) than ${lo.name} (${Math.round(Math.min(ea, eb))}). The right pick depends on your task — compare their coding, math, and reasoning scores in the table above.`,
+      a: Math.round(ea) === Math.round(eb)
+        ? `On Epoch AI's Capabilities Index, ${a.name} and ${b.name} both score ${Math.round(ea)}. The right pick depends on your task, so compare their coding, math, and reasoning scores in the table above.`
+        : `On Epoch AI's Capabilities Index, ${hi.name} scores higher (${Math.round(Math.max(ea, eb))}) than ${lo.name} (${Math.round(Math.min(ea, eb))}). The right pick depends on your task, so compare their coding, math, and reasoning scores in the table above.`,
     })
   }
   if (a.price_in != null && b.price_in != null) {
     const lo = a.price_in <= b.price_in ? a : b
     faq.push({
       q: `Which is cheaper, ${a.name} or ${b.name}?`,
-      a: `${lo.name} is cheaper on input tokens at $${Math.min(a.price_in, b.price_in).toFixed(2)} per million, versus $${Math.max(a.price_in, b.price_in).toFixed(2)} (representative OpenRouter pricing).`,
+      a: a.price_in.toFixed(2) === b.price_in.toFixed(2)
+        ? `Neither: both cost $${a.price_in.toFixed(2)} per million input tokens (representative OpenRouter pricing).`
+        : `${lo.name} is cheaper on input tokens at $${Math.min(a.price_in, b.price_in).toFixed(2)} per million, versus $${Math.max(a.price_in, b.price_in).toFixed(2)} (representative OpenRouter pricing).`,
     })
   }
   if (a.context_window && b.context_window) {
     const big = a.context_window >= b.context_window ? a : b
     faq.push({
       q: `Which has a larger context window, ${a.name} or ${b.name}?`,
-      a: `${big.name} supports up to ${fmtContext(Math.max(a.context_window, b.context_window))} tokens, compared with ${fmtContext(Math.min(a.context_window, b.context_window))} for the other.`,
+      a: fmtContext(a.context_window) === fmtContext(b.context_window)
+        ? `Neither: both support up to ${fmtContext(a.context_window)} tokens.`
+        : `${big.name} supports up to ${fmtContext(Math.max(a.context_window, b.context_window))} tokens, compared with ${fmtContext(Math.min(a.context_window, b.context_window))} for the other.`,
     })
   }
   const ca = a.buckets?.coding, cb = b.buckets?.coding
   if (ca != null && cb != null) {
     const c = ca >= cb ? a : b
+    const shared = sharedCodingBenchmarks(a, b).slice(0, 2)
+    const basis = shared.length ? ` across coding benchmarks like ${shared.join(' and ')}` : ' for coding'
     faq.push({
       q: `Which is better for coding, ${a.name} or ${b.name}?`,
-      a: `Across coding benchmarks like SWE-bench Verified and Terminal-Bench, ${c.name} ranks higher — ${Math.max(ca, cb)}th vs ${Math.min(ca, cb)}th percentile among the models tracked on Model Beat.`,
+      a: ca === cb
+        ? `They rank the same${basis}: both sit in the ${ordinal(ca)} percentile among the models tracked on Model Beat.`
+        : `${c.name} ranks higher${basis}: ${ordinal(Math.max(ca, cb))} vs ${ordinal(Math.min(ca, cb))} percentile among the models tracked on Model Beat.`,
     })
   }
   return faq

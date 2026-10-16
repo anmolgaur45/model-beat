@@ -1,50 +1,97 @@
 name: deploy-health
 
-# Guards against the 2026-07-22 incident: prod deploys silently failed for ~4
-# days (build exhausted Cloud SQL connections), so the DB updated but no fresh
-# static build reached production and the site went stale unnoticed.
+# Guards against prod going stale without anyone noticing. Two incidents:
+# - 2026-07-22: deploys silently failed for ~4 days (the build exhausted Cloud
+#   SQL connections), so the DB updated but the site did not.
+# - 2026-10-16 health check: the sitemap stayed frozen at the build for days and
+#   today's /day page stuck at a mid-day build copy, while /models (the only page
+#   this used to check) looked healthy.
 #
-# The check is pure black-box: the CDN `Age` header on a static page tells us
-# how long since the last successful deploy refreshed it. Freshness comes from
-# a pipeline redeploy every 3h, so a healthy page is almost always < 3h old.
-# Age past the threshold = deploys are broken. No DB access, no secrets.
+# Pure black-box: no DB access, no secrets.
+# - /models: CDN Age. The pipeline revalidates it every 3h; past 9h means the
+#   refreshes (or deploys) are broken.
+# - /sitemap.xml: its newest <lastmod> is the render time. It is CDN-cached for
+#   1h, so a copy older than 4h means it stopped rendering.
+# - today's /day page: Age past 4h means it missed a run's revalidate. A 404 is
+#   expected early in the UTC day, before the day has stories.
+# A stale-looking result is re-checked once after 30s, because the first request
+# after an expiry can be the stale copy that triggers the refresh.
 #
-# On failure, GitHub notifies the repo owner (ensure Actions failure
-# notifications are on). Manual run: Actions tab -> deploy-health -> Run workflow.
+# Runs ~40 min after each 3-hourly pipeline run. On failure GitHub notifies the
+# repo owner. Manual run: Actions tab -> deploy-health -> Run workflow.
 
 on:
   schedule:
-    - cron: '0 */6 * * *'   # every 6 hours
+    - cron: '40 */3 * * *'
   workflow_dispatch: {}
 
 jobs:
   freshness:
     runs-on: ubuntu-latest
     steps:
-      - name: Check prod deploy freshness
+      - name: Check prod freshness
         run: |
           set -euo pipefail
-          URL="https://themodelbeat.com/models"
-          # 3 missed 3h deploy cycles = definitely broken (margin over CDN variance
-          # and the occasional single transient build failure, which self-heals).
-          MAX_AGE=32400   # 9 hours, in seconds
+          SITE="https://themodelbeat.com"
+          fail=0
 
-          headers="$(curl -fsSI "$URL")"
-          code="$(printf '%s' "$headers" | head -1)"
-          # awk (not grep) so a MISSING Age header — which means the page was just
-          # regenerated, i.e. FRESH — yields empty->0, never a non-zero exit that
-          # set -e would turn into a false "stale" alarm.
-          age="$(printf '%s' "$headers" | awk 'tolower($0) ~ /^age:/ {print $2}' | tr -d '\r')"
-          age="${age:-0}"
+          # "<status> <age>" for a GET. A missing Age header means the response
+          # was just generated, i.e. fresh, so it counts as 0.
+          probe() {
+            curl -sS -o /dev/null -D - "$1" | tr -d '\r' | awk '
+              NR == 1 { code = $2 }
+              tolower($1) == "age:" { age = $2 }
+              END { printf "%s %d\n", code, age + 0 }'
+          }
 
-          echo "URL:    $URL"
-          echo "Status: $code"
-          echo "Age:    ${age}s (~$(( age / 3600 ))h)  |  threshold ${MAX_AGE}s (9h)"
+          # Seconds since the sitemap was rendered (its newest lastmod); -1 when
+          # it can't be fetched or has no lastmod.
+          sitemap_age() {
+            lm="$(curl -fsS "$SITE/sitemap.xml" | grep -o '<lastmod>[^<]*' | sed 's/<lastmod>//' | sort | tail -1)" || true
+            if [ -z "$lm" ]; then echo -1; return; fi
+            echo $(( $(date -u +%s) - $(date -u -d "$lm" +%s) ))
+          }
 
-          if [ "$age" -gt "$MAX_AGE" ]; then
-            echo "::error::Prod is stale: /models has not been redeployed in ~$(( age / 3600 ))h."
-            echo "::error::Deploys are likely failing. Check Vercel build logs; the last"
-            echo "::error::cause was the day-page prerender exhausting Cloud SQL connections."
-            exit 1
+          # 1. /models
+          read -r code age <<< "$(probe "$SITE/models")"
+          echo "/models: HTTP $code, Age ${age}s (~$(( age / 3600 ))h), limit 9h"
+          if [ "$code" != "200" ] || [ "$age" -gt 32400 ]; then
+            echo "::error::/models is down or stale (HTTP $code, Age ~$(( age / 3600 ))h). Per-run revalidation or deploys are failing; check Vercel logs and the pipeline's pipeline.revalidated line."
+            fail=1
           fi
+
+          # 2. /sitemap.xml
+          sage="$(sitemap_age)"
+          if [ "$sage" -gt 14400 ]; then sleep 30; sage="$(sitemap_age)"; fi
+          if [ "$sage" -lt 0 ]; then
+            echo "::error::Could not fetch /sitemap.xml or read its lastmod."
+            fail=1
+          else
+            echo "/sitemap.xml: rendered ${sage}s ago (~$(( sage / 3600 ))h), limit 4h"
+            if [ "$sage" -gt 14400 ]; then
+              echo "::error::The sitemap has not re-rendered in ~$(( sage / 3600 ))h. It should be at most ~1h old (force-dynamic + 1h CDN cache)."
+              fail=1
+            fi
+          fi
+
+          # 3. today's /day page
+          today="$(date -u +%F)"
+          hour="$(date -u +%H)"
+          read -r code age <<< "$(probe "$SITE/day/$today")"
+          if [ "$code" = "200" ] && [ "$age" -gt 14400 ]; then
+            sleep 30
+            read -r code age <<< "$(probe "$SITE/day/$today")"
+          fi
+          echo "/day/$today: HTTP $code, Age ${age}s (~$(( age / 3600 ))h), limit 4h"
+          if [ "$code" = "404" ] && [ "$((10#$hour))" -lt 6 ]; then
+            echo "OK: no stories yet early in the UTC day."
+          elif [ "$code" != "200" ]; then
+            echo "::error::Today's day page returned HTTP $code at ${hour}:xx UTC."
+            fail=1
+          elif [ "$age" -gt 14400 ]; then
+            echo "::error::Today's day page is ~$(( age / 3600 ))h old: it missed the per-run revalidate (the 2026-10-15 stall)."
+            fail=1
+          fi
+
+          if [ "$fail" -ne 0 ]; then exit 1; fi
           echo "OK: prod is fresh."

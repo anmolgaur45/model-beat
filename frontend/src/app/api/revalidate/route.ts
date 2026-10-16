@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { revalidatePath } from 'next/cache'
 import sql from '@/lib/db'
 import { SITE_URL } from '@/lib/site'
+import { BEST_VIEWS } from '@/lib/bestModels'
+import { comparePairs } from '@/lib/comparePairs'
 
 export const maxDuration = 60
 
@@ -18,10 +20,7 @@ async function pingIndexNow(paths: string[]) {
   // Only the production apex has the key file; skip previews/local.
   if (SITE_URL !== 'https://themodelbeat.com') return
   const host = 'themodelbeat.com'
-  // Sitemap is crawled directly by Bing; IndexNow wants content URLs only.
-  const urlList = paths
-    .filter((p) => p !== '/sitemap.xml')
-    .map((p) => `${SITE_URL}${p}`)
+  const urlList = paths.map((p) => `${SITE_URL}${p}`)
   if (urlList.length === 0) return
   try {
     await fetch('https://api.indexnow.org/indexnow', {
@@ -44,12 +43,13 @@ async function pingIndexNow(paths: string[]) {
 // after each run instead of triggering a full-site rebuild via the deploy hook.
 // A full rebuild every 3h prerendered 274 DB-backed pages in parallel, exhausted
 // Cloud SQL's ~47 connections, and failed all-or-nothing (silent 12h staleness).
-// This refreshes only the ~20 pages that actually change: no heavy parallel build,
+// This refreshes only the ~60 pages that can change: no heavy parallel build,
 // can't exhaust connections, and one page's failure never blocks the others.
 //
 // Cost: story pages stay SSR (force-dynamic, zero ISR writes — they were the 2,224
 // pages behind the original write-budget crisis). Only these aggregate/model/day
-// pages enter ISR: ~20 paths x 8 runs/day ≈ 5k writes/month vs the 200k budget.
+// pages enter ISR: ~60 paths x 8 runs/day is at most ~15k writes/month against
+// the 200k budget, and a path only rewrites when it's next visited.
 // NO layout-wide purge (revalidatePath('/', 'layout') is what over-spent before);
 // every path is revalidated individually.
 export async function POST(req: NextRequest) {
@@ -70,8 +70,10 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // Fixed aggregate surfaces that change every run.
-  for (const p of ['/', '/models', '/models/changes', '/models/compare', '/digest', '/sitemap.xml']) {
+  // Fixed aggregate surfaces that change every run. The compare hub, sitemap,
+  // feeds and llms.txt are not here: they are dynamic behind a CDN cache
+  // (next.config.ts), which revalidatePath can't reach.
+  for (const p of ['/', '/models', '/models/changes', '/digest']) {
     revalidate(p)
   }
 
@@ -98,7 +100,20 @@ export async function POST(req: NextRequest) {
     // A DB blip here must not fail the aggregate revalidations above.
   }
 
-  await pingIndexNow(done)
+  // IndexNow gets only the pages above, whose content follows the news.
+  const changedPaths = [...done]
+
+  // Rankings and curated comparisons rank against the whole registry, so any
+  // model change can move them. Until 2026-10-16 they only refreshed on a
+  // deploy, 5-10 days apart. ~40 paths, regenerated only when next visited.
+  for (const v of BEST_VIEWS) revalidate(`/models/best/${v.key}`)
+  try {
+    for (const p of await comparePairs()) revalidate(`/models/compare/${p.a}-vs-${p.b}`)
+  } catch {
+    // Same: a DB blip must not fail the revalidations above.
+  }
+
+  await pingIndexNow(changedPaths)
 
   return NextResponse.json({ revalidated: done.length, paths: done, at: now.toISOString() })
 }

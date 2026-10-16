@@ -16,7 +16,7 @@ const SITE = SITE_URL
 // the last good page, instead of caching an empty leaderboard as a healthy 200.
 const loadModels = cache(async (): Promise<Model[]> => {
   const caller = appRouter.createCaller(createContext())
-  return caller.articles.getModels({ limit: 200 })
+  return caller.articles.getModels()
 })
 
 export async function generateStaticParams() {

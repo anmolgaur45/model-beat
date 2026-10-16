@@ -21,18 +21,25 @@ import { PapersFold } from '@/components/PapersFold'
 // Match the homepage's top-story gate: only a high-signal lead gets the hero card.
 const TOP_STORY_MIN = 6
 
-// Fully static, no TTL: freshness comes from the pipeline-triggered redeploy
-// every 3h, so revalidation writes are zero (Hobby ISR-write budget,
-// 2026-07-14). Prerender only the recent substantive days (fixed 45-day window,
-// ~45 pages). A 370-day window (272 pages) grew denser as the site matured until
-// the parallel prerender exhausted Cloud SQL's ~47 connections and every deploy
-// failed for ~4 days (2026-07-22 incident). A FIXED window keeps build DB load
-// bounded over time. Older substantive days stay in the sitemap and render on
-// demand (still indexable); thin/backdated days and a brand-new day between
-// deploys likewise render on demand and cache.
+// No TTL: the pipeline's per-run revalidate refreshes today's and yesterday's
+// pages (api/revalidate). Prerender only the recent substantive days (fixed
+// 45-day window, ~45 pages). A 370-day window (272 pages) grew denser as the site
+// matured until the parallel prerender exhausted Cloud SQL's ~47 connections and
+// every deploy failed for ~4 days (2026-07-22 incident). A FIXED window keeps
+// build DB load bounded over time. Older substantive days stay in the sitemap
+// and render on demand (still indexable); thin/backdated days likewise render on
+// demand and cache.
+//
+// Today is never prerendered: the day is still filling, so a build copy is stale
+// within hours. On 2026-10-15 the digest deploy baked today's page at 33 stories
+// and it ignored three per-run revalidations (every call succeeded) until it
+// became "yesterday", while an on-demand today page refreshes after every run
+// (verified 2026-10-16). The cause never surfaced (Hobby keeps ~1h of logs), so
+// this sidesteps it; deploy-health alerts if today's page goes stale again.
 export async function generateStaticParams() {
+  const today = new Date().toISOString().slice(0, 10)
   const days = await recentSubstantiveDays(45)
-  return days.map((day) => ({ date: day }))
+  return days.filter((day) => day !== today).map((day) => ({ date: day }))
 }
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/

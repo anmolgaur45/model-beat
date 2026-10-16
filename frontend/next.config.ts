@@ -102,6 +102,21 @@ const nextConfig: NextConfig = {
           },
         ],
       },
+      // The sitemap, both RSS feeds and llms.txt are force-dynamic behind the
+      // same 1h CDN cache. As build-time static files they never refreshed:
+      // revalidatePath and `revalidate = 3600` both left the sitemap's build
+      // copy in place for days (2026-10-16 health check). An hour of staleness
+      // is fine for crawlers and feed readers, and stale-if-error keeps the last
+      // good copy up through a DB outage.
+      ...['/sitemap.xml', '/feed.xml', '/llms.txt', '/models/changes/rss'].map((source) => ({
+        source,
+        headers: [
+          {
+            key: 'Vercel-CDN-Cache-Control',
+            value: 'max-age=3600, stale-while-revalidate=86400, stale-if-error=86400',
+          },
+        ],
+      })),
     ]
   },
 };

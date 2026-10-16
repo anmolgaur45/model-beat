@@ -3,7 +3,9 @@ import { SITE_URL as SITE } from '@/lib/site'
 import { comparePairs, pairModelNames } from '@/lib/comparePairs'
 import { BEST_VIEWS } from '@/lib/bestModels'
 
-export const dynamic = 'force-static'
+// Rendered per request behind a 1h CDN cache (next.config.ts). force-static
+// froze it at the build, and builds land days apart.
+export const dynamic = 'force-dynamic'
 
 // llms.txt — a curated, plain-text map of the site for AI crawlers/answer engines
 // (https://llmstxt.org). Lists the high-value, data-rich pages we want cited,
@@ -88,7 +90,7 @@ ${modelLines}
   return new Response(body, {
     headers: {
       'Content-Type': 'text/plain; charset=utf-8',
-      'Cache-Control': 'public, max-age=0, s-maxage=86400, stale-while-revalidate',
+      'Cache-Control': 'public, max-age=0, must-revalidate',
     },
   })
 }

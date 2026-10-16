@@ -10,12 +10,11 @@ import { storyPath } from '@/lib/story'
 import { isPaperCluster } from '@/lib/papers'
 import HomePageClient from './HomePageClient'
 
-// Static at build; the pipeline-triggered redeploy every 3h is the freshness
-// mechanism (zero ISR writes, 2026-07-14). The client island still refetches,
-// so users see new stories between deploys.
+// Prerendered at build, then refreshed after every pipeline run by the targeted
+// revalidate (api/revalidate).
 
-// Server "today" in UTC (Vercel runs UTC); the client nudges to the visitor's
-// local day post-hydration if their timezone has already rolled over.
+// Server "today" in UTC (Vercel runs UTC). After hydration the client moves to
+// the visitor's local day only when it is behind UTC (homeToday).
 function serverToday(): string {
   return new Date().toISOString().slice(0, 10)
 }
@@ -34,7 +33,7 @@ const loadHome = cache(async () => {
   const [clusters, topStories, models] = await Promise.all([
     caller.articles.getClusters({ date, limit: 100, by: 'peak' }),
     caller.articles.getTopStories({ days: 7, limit: 6 }),
-    caller.articles.getModels({ limit: 200 }),
+    caller.articles.getModels(),
   ])
   const topModels: TopModel[] = models
     .filter((m) => isModelAvailable(m.slug))

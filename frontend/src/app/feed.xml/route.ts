@@ -2,9 +2,9 @@ import sql from '@/lib/db'
 import { SITE_URL as SITE } from '@/lib/site'
 import { storyPath } from '@/lib/story'
 
-// Built once per deploy (zero ISR writes, 2026-07-14); the 3h redeploy
-// cadence keeps the feed fresh.
-export const dynamic = 'force-static'
+// Rendered per request behind a 1h CDN cache (next.config.ts). force-static
+// froze it at the build, and builds land days apart.
+export const dynamic = 'force-dynamic'
 
 function esc(s: string): string {
   return s
@@ -70,7 +70,7 @@ export async function GET() {
   return new Response(xml, {
     headers: {
       'Content-Type': 'application/rss+xml; charset=utf-8',
-      'Cache-Control': 'public, max-age=3600, s-maxage=3600',
+      'Cache-Control': 'public, max-age=3600',
     },
   })
 }

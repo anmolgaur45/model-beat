@@ -1,43 +1,34 @@
 'use client'
 
 import { useState } from 'react'
+import { shiftDay } from '@/lib/timeFormat'
 
 interface Props {
+  // The page's resolved "today" (homeToday), never the browser clock: the rail
+  // must render the same dates as the server HTML or hydration fails (#418).
+  today: string
   selectedDate: string
   onSelect: (date: string) => void
   storyCounts?: Record<string, number>
 }
 
-function localISO(date: Date = new Date()): string {
-  const y = date.getFullYear()
-  const m = String(date.getMonth() + 1).padStart(2, '0')
-  const d = String(date.getDate()).padStart(2, '0')
-  return `${y}-${m}-${d}`
+function getRecentDates(today: string, count: number): string[] {
+  return Array.from({ length: count }, (_, i) => shiftDay(today, -i))
 }
 
-function getRecentDates(count: number): string[] {
-  return Array.from({ length: count }, (_, i) => {
-    const d = new Date()
-    d.setDate(d.getDate() - i)
-    return localISO(d)
-  })
-}
-
-function formatRailLabel(dateStr: string): string {
-  const today = localISO()
-  const yesterday = (() => { const d = new Date(); d.setDate(d.getDate() - 1); return localISO(d) })()
+function formatRailLabel(dateStr: string, today: string): string {
   if (dateStr === today) return 'Today'
-  if (dateStr === yesterday) return 'Yesterday'
+  if (dateStr === shiftDay(today, -1)) return 'Yesterday'
   const d = new Date(dateStr + 'T12:00:00Z')
-  const day = d.toLocaleDateString('en-US', { weekday: 'short' })
+  const day = d.toLocaleDateString('en-US', { weekday: 'short', timeZone: 'UTC' })
   const num = d.getUTCDate()
-  const month = d.toLocaleDateString('en-US', { month: 'short' })
+  const month = d.toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' })
   return `${day} ${num} · ${month}`
 }
 
-export function DateNav({ selectedDate, onSelect, storyCounts = {} }: Props) {
+export function DateNav({ today, selectedDate, onSelect, storyCounts = {} }: Props) {
   const [daysShown, setDaysShown] = useState(7)
-  const dates = getRecentDates(daysShown)
+  const dates = getRecentDates(today, daysShown)
   const maxDays = 60
 
   return (
@@ -54,7 +45,7 @@ export function DateNav({ selectedDate, onSelect, storyCounts = {} }: Props) {
             suppressHydrationWarning
           >
             <span className="anc-dt-dot" />
-            <span>{formatRailLabel(date)}</span>
+            <span>{formatRailLabel(date, today)}</span>
             {count !== undefined && (
               <span className="anc-dt-count">{count}</span>
             )}

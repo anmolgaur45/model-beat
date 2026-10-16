@@ -38,12 +38,9 @@ function trimSummary(e: ModelEvent): string {
 
 export default async function ModelChangesPage() {
   const caller = appRouter.createCaller(createContext())
-  let events: ModelEvent[] = []
-  try {
-    events = await caller.articles.getModelEvents({ days: 30 })
-  } catch {
-    // ISR keeps serving the last good page; an empty render is the cold-start fallback
-  }
+  // No catch: a DB blip during the per-run regeneration must throw so ISR keeps
+  // serving the last good page. Caught, it cached an empty feed as a healthy 200.
+  const events: ModelEvent[] = await caller.articles.getModelEvents({ days: 30 })
 
   // Vendor groups, ordered by each vendor's most recent event
   const groups = new Map<string, ModelEvent[]>()

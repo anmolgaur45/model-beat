@@ -249,7 +249,7 @@ export function ModelTelemetry({ view: M }: { view: ModelView }) {
             <span className="lbl">Strongest at</span>
             {M.bestAt.map((b) => (
               <span className="chip" key={b.label}>
-                {b.label} <i>top {100 - b.pct}%</i>
+                {b.label} <i>top {Math.max(1, 100 - b.pct)}%</i>
               </span>
             ))}
           </div>

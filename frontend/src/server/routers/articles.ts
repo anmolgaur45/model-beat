@@ -583,15 +583,16 @@ export const articlesRouter = router({
   // ── Model registry (Phase K) ──────────────────────────────────────────────
   // Canonical models released in the last year (Epoch AI–backed), newest first,
   // each with its headline Epoch Capabilities Index and news-coverage count.
+  // No LIMIT: the year window is the bound. A 200 cap silently dropped the
+  // oldest 96 models (Gemini 3.1 Pro, Opus 4.7, GPT-5.4) once the registry
+  // passed 200 around 2026-08-12, and ranked percentiles against that partial
+  // list, so they disagreed with the model and compare pages.
   getModels: publicProcedure
-    .input(z.object({ limit: z.number().min(1).max(300).default(200) }).optional())
-    .query(async ({ input }) => {
-      const limit = input?.limit ?? 200
+    .query(async () => {
       const models = await sql<Model[]>`
         SELECT * FROM models
         WHERE released_at >= now() - interval '1 year'
         ORDER BY released_at DESC NULLS LAST
-        LIMIT ${limit}
       `
       if (models.length === 0) return []
 

@@ -28,7 +28,7 @@ async function loadModels(slugs: string[]): Promise<Model[]> {
 // Lightweight roster for the inline picker (name/slug/vendor only).
 async function loadRoster(): Promise<{ slug: string; name: string; vendor: string | null }[]> {
   const caller = appRouter.createCaller(createContext())
-  const all = await caller.articles.getModels({ limit: 300 }).catch(() => [] as Model[])
+  const all = await caller.articles.getModels().catch(() => [] as Model[])
   return all.map((m) => ({ slug: m.slug, name: m.name, vendor: m.vendor }))
 }
 

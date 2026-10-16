@@ -11,8 +11,8 @@ import { benchmarkMeta, GROUP_ORDER, GROUP_LABELS } from '@/lib/benchmarks'
 import { comparePairKeys, flagshipModels, pairKey } from '@/lib/comparePairs'
 import sql from '@/lib/db'
 
-// Static at build; the pipeline-triggered redeploy every 3h keeps these
-// current (zero ISR writes, 2026-07-14).
+// Prerendered at build; the pipeline's per-run revalidate refreshes models with
+// a launch in the last 3 days or an event in the last 4h (api/revalidate).
 
 // Registers the route for ISR. Without generateStaticParams Next served these
 // pages fully dynamic (private, no-store) despite the revalidate export, so

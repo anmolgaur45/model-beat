@@ -9,7 +9,7 @@ const SITE = SITE_URL
 
 async function loadModels(): Promise<Model[]> {
   const caller = appRouter.createCaller(createContext())
-  return caller.articles.getModels({ limit: 200 })
+  return caller.articles.getModels()
 }
 
 export default async function ModelsPage() {

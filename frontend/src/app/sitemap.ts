@@ -8,15 +8,14 @@ import { storyPath } from '@/lib/story'
 import { listIssues } from '@/lib/digestIssues'
 import { substantiveDays } from '@/lib/days'
 
-// ISR, 1h. Without this the DB-backed sitemap bakes at build and the CDN serves
-// that copy for ~a day (revalidatePath does not reliably purge metadata routes),
-// so a brand-new model/day/story page took up to a full day to reach Google's
-// sitemap (found 2026-07-23 when Opus 5 shipped: sitemap Age was 32h). ISR caps
-// that at 1h, lets the pipeline's per-run revalidatePath('/sitemap.xml') actually
-// refresh it (immediate on a launch), and unlike force-dynamic it still caches
-// through crawler bursts so the db-f1-micro is never queried per request. Cost is
-// <=24 regenerations/day, negligible against the 200k ISR-write budget.
-export const revalidate = 3600
+// Rendered per request and cached by the CDN for 1h (Vercel-CDN-Cache-Control in
+// next.config.ts), the pattern /story uses. Both earlier fixes stopped working:
+// `revalidate = 3600` and the pipeline's revalidatePath('/sitemap.xml') left the
+// build-time copy in place (2026-10-16: still a HIT 11h after the deploy, with no
+// page newer than the build), so new days, stories and models waited for the
+// next deploy, 5-10 days apart. The CDN cache absorbs crawler bursts, so the
+// db-f1-micro sees about one render an hour; stale-if-error covers a DB outage.
+export const dynamic = 'force-dynamic'
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // Substantive, recent days only (>=3 stories within ~1y) — matches the day

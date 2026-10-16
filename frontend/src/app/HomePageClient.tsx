@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useSyncExternalStore } from 'react'
 import { keepPreviousData } from '@tanstack/react-query'
 import type { inferRouterOutputs } from '@trpc/server'
 import { trpc } from '@/lib/trpc'
@@ -17,6 +17,7 @@ import { NavBar } from '@/components/NavBar'
 import { Ticker } from '@/components/Ticker'
 import { HeroModelBand, type TopModel } from '@/components/HeroModelBand'
 import { CATEGORY_LABELS } from '@/components/categoryMeta'
+import { homeToday, localISO, shiftDay } from '@/lib/timeFormat'
 
 // Exact router output shapes so initialData matches the query's data type.
 type RouterOutputs = inferRouterOutputs<AppRouter>
@@ -31,17 +32,6 @@ interface Props {
   initialTopModels: TopModel[]
 }
 
-function localISO(date: Date = new Date()): string {
-  const y = date.getFullYear()
-  const m = String(date.getMonth() + 1).padStart(2, '0')
-  const d = String(date.getDate()).padStart(2, '0')
-  return `${y}-${m}-${d}`
-}
-
-function todayISO(): string {
-  return localISO()
-}
-
 function getDateMeta(iso: string): { num: string; weekday: string } {
   const d = new Date(iso + 'T12:00:00Z')
   return {
@@ -50,33 +40,43 @@ function getDateMeta(iso: string): { num: string; weekday: string } {
   }
 }
 
-function getMobileDates(count: number): Array<{ iso: string; num: string; weekday: string }> {
+function getMobileDates(today: string, count: number): Array<{ iso: string; num: string; weekday: string }> {
   return Array.from({ length: count }, (_, i) => {
-    const d = new Date()
-    d.setDate(d.getDate() - i)
-    const iso = localISO(d)
+    const iso = shiftDay(today, -i)
     return { iso, ...getDateMeta(iso) }
   })
 }
 
-function heroDateLabel(iso: string): { display: string; sub: string } {
-  const today = localISO()
-  const yesterday = (() => { const d = new Date(); d.setDate(d.getDate() - 1); return localISO(d) })()
+function heroDateLabel(iso: string, today: string): { display: string; sub: string } {
   const d = new Date(iso + 'T12:00:00Z')
   const sub = d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', timeZone: 'UTC' })
   if (iso === today) return { display: 'Today', sub }
-  if (iso === yesterday) return { display: 'Yesterday', sub }
+  if (iso === shiftDay(today, -1)) return { display: 'Yesterday', sub }
   return {
     display: d.toLocaleDateString('en-US', { weekday: 'long', timeZone: 'UTC' }),
     sub,
   }
 }
 
+// Nothing to subscribe to: each render re-reads the clock. useSyncExternalStore
+// is here for its server snapshot, which hydration uses instead of the clock.
+const subscribeNever = () => () => {}
+
 export default function HomePageClient({ initialDate, initialClusters, initialTopStories, initialTopModels }: Props) {
-  // Start on the server's date so first client render matches the SSR HTML; a
-  // post-mount effect nudges it to the visitor's local day if their timezone
-  // has already rolled over (avoids a hydration mismatch).
-  const [selectedDate, setSelectedDate] = useState(initialDate)
+  // Every date on the page (hero, rail, strip, section heading) derives from
+  // this one "today". Hydration renders with the server's day, so the HTML
+  // matches; right after, React swaps in the visitor's day where it has
+  // stories (homeToday). Reading the browser clock during render made the rail
+  // and labels differ from the server HTML whenever the visitor's date wasn't
+  // the UTC date, which threw hydration error #418 and re-rendered the page.
+  const today = useSyncExternalStore(
+    subscribeNever,
+    () => homeToday(initialDate, localISO(), new Date().toISOString().slice(0, 10)),
+    () => initialDate,
+  )
+  // null = follow today; set when the visitor picks a date.
+  const [pickedDate, setPickedDate] = useState<string | null>(null)
+  const selectedDate = pickedDate ?? today
   const [selectedCategory, setSelectedCategory] = useState<CategoryOption>('all')
   const [search, setSearch] = useState('')
   const [recapMode, setRecapMode] = useState(false)
@@ -94,14 +94,8 @@ export default function HomePageClient({ initialDate, initialClusters, initialTo
   const handleDateSelect = useCallback((date: string) => {
     setSearch('')
     setRecapMode(false)
-    setSelectedDate(date)
+    setPickedDate(date)
   }, [])
-
-  // Correct to the visitor's local day if it differs from the server's day.
-  useEffect(() => {
-    const local = todayISO()
-    if (local !== initialDate) setSelectedDate(local)
-  }, [initialDate])
 
   // Searching always exits recap so the two modes never overlap
   useEffect(() => {
@@ -149,7 +143,7 @@ export default function HomePageClient({ initialDate, initialClusters, initialTo
     if (conn?.saveData) return
     let cancelled = false
     const warm = async () => {
-      for (const { iso } of getMobileDates(7)) {
+      for (const { iso } of getMobileDates(today, 7)) {
         if (cancelled) return
         await utils.articles.getClusters.prefetch(
           { date: iso, category: categoryParam, limit: 100, by: 'peak' },
@@ -166,14 +160,14 @@ export default function HomePageClient({ initialDate, initialClusters, initialTo
       if (hasIdle) window.cancelIdleCallback(handle)
       else window.clearTimeout(handle)
     }
-  }, [timelineMode, categoryParam, utils])
+  }, [timelineMode, categoryParam, utils, today])
 
   // Honest split for the hero count: pure-arXiv paper clusters are shelved
   // below the stories by DateSection, so don't count them as "stories".
   const paperCount = (timelineData ?? []).filter(isPaperCluster).length
   const storyCount = (timelineData ?? []).length - paperCount
 
-  const isTodaySelected = selectedDate === todayISO()
+  const isTodaySelected = selectedDate === today
 
   const { data: searchPage, isLoading: searchLoading, isFetching: searchFetching } =
     trpc.articles.search.useQuery(
@@ -213,8 +207,8 @@ export default function HomePageClient({ initialDate, initialClusters, initialTo
     return { [selectedDate]: timelineData.filter((c) => !isPaperCluster(c)).length }
   }, [timelineData, selectedDate])
 
-  const { display: heroDisplay, sub: heroSub } = heroDateLabel(selectedDate)
-  const mobileDates = getMobileDates(mobileDaysShown)
+  const { display: heroDisplay, sub: heroSub } = heroDateLabel(selectedDate, today)
+  const mobileDates = getMobileDates(today, mobileDaysShown)
 
   return (
     <div className="aurora-stage" suppressHydrationWarning>
@@ -233,7 +227,7 @@ export default function HomePageClient({ initialDate, initialClusters, initialTo
           setSearch('')
           setRecapMode(false)
           setSelectedCategory('all')
-          setSelectedDate(todayISO())
+          setPickedDate(null)
         }}
       />
 
@@ -250,6 +244,7 @@ export default function HomePageClient({ initialDate, initialClusters, initialTo
         {/* Desktop date rail */}
         {timelineMode && (
           <DateNav
+            today={today}
             selectedDate={selectedDate}
             onSelect={handleDateSelect}
             storyCounts={storyCounts}
@@ -381,6 +376,7 @@ export default function HomePageClient({ initialDate, initialClusters, initialTo
             ) : (
               <DateSection
                 date={selectedDate}
+                today={today}
                 clusters={timelineData ?? []}
                 pending={timelinePending}
               />

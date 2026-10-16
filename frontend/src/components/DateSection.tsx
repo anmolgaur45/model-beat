@@ -63,13 +63,15 @@ function EmptyState({ dateLabel }: { dateLabel: string }) {
 
 interface Props {
   date: string
+  // The page's resolved "today", so "Today"/"Yesterday" match the server HTML.
+  today: string
   clusters: ClusterWithArticles[]
   scoreStyle?: ScoreStyle
   // The previous day's stories are still shown while a newly picked date loads.
   pending?: boolean
 }
 
-export function DateSection({ date, clusters, scoreStyle = 'orb', pending = false }: Props) {
+export function DateSection({ date, today, clusters, scoreStyle = 'orb', pending = false }: Props) {
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE)
 
   // Pure-arXiv paper clusters collapse into a shelf below the stories — a day
@@ -77,7 +79,7 @@ export function DateSection({ date, clusters, scoreStyle = 'orb', pending = fals
   const all = [...clusters].sort(bySignificance)
   const sorted = all.filter((c) => !isPaperCluster(c))
   const papers = all.filter((c) => isPaperCluster(c))
-  const label = formatDateLabel(date)
+  const label = formatDateLabel(date, today)
 
   // Promote the top cluster to the hero "top story" card only when it clears the
   // significance bar. Otherwise everything is an ordinary card in the list.

@@ -30,7 +30,7 @@ const SECTIONS = [
   {
     tag: 'Top stories',
     title: 'What actually mattered this week',
-    body: 'Ranked by our significance engine across 1,300+ outlets, deduplicated to one entry per story. No filler.',
+    body: 'Ranked by our significance engine across 4,000+ outlets, deduplicated to one entry per story. No filler.',
   },
   {
     tag: 'Model moves',
@@ -70,7 +70,7 @@ export default async function DigestPage() {
         <h1 className="anc-sw-h1">The week in AI models. One email, Thursdays.</h1>
         <p className="anc-sw-lead">
           Three minutes every Thursday: the week&rsquo;s top stories ranked by our significance
-          engine, every price move, benchmark jump and new model from the 140+ we track, and a
+          engine, every price move, benchmark jump and new model from the 250+ we track, and a
           short personal take. Written from our own tracker data, not paraphrased headlines.
         </p>
 

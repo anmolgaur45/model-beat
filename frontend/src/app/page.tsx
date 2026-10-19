@@ -52,7 +52,7 @@ export function generateMetadata(): Metadata {
     // Hand-written and stable: the previous auto-concatenated headlines
     // truncated mid-word in SERPs and read as noise (2026-07-11 audit).
     description:
-      'Stories from 1,300+ outlets, deduplicated and ranked by significance, plus a live tracker of 140+ AI models with benchmarks and pricing.',
+      'Stories from 4,000+ outlets, deduplicated and ranked by significance, plus a live tracker of 250+ AI models with benchmarks and pricing.',
     // Canonical renders without a trailing slash: Next's metadata resolver
     // normalizes it away even when passed explicitly. Audit-confirmed
     // negligible (Google normalizes the pair), so accepted as-is.

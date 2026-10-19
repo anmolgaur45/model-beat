@@ -43,8 +43,8 @@ export default function MethodologyPage() {
         <section className="anc-sw-prose">
           <h2 id="grouping">How stories are grouped</h2>
           <p>
-            Model Beat watches roughly 45 feeds (lab blogs, tech press, arXiv, Hacker News, and
-            Google News queries that reach 1,300+ outlets) every 3 hours. When several outlets
+            Model Beat watches nearly 40 feeds (lab blogs, tech press, arXiv, Hacker News, and
+            Google News queries that reach 4,000+ outlets) every 3 hours. When several outlets
             cover the same event, those articles are grouped into one story, so the feed shows
             events rather than fifteen copies of the same headline.
           </p>

@@ -54,18 +54,18 @@ export default function AboutPage() {
         <div className="anc-kicker">About</div>
         <h1 className="anc-sw-h1">Covering the AI beat, every day.</h1>
         <p className="anc-sw-lead">
-          Model Beat is an AI news tracker and model comparison site. It watches about 45 feeds
+          Model Beat is an AI news tracker and model comparison site. It watches nearly 40 feeds
           around the clock, collapses the fifteen articles covering the same event into one story,
           ranks what is left by significance, and links the news to the models it is about. The
-          model tracker follows 140+ models with benchmark scores, pricing, and specs, refreshed
+          model tracker follows 250+ models with benchmark scores, pricing, and specs, refreshed
           every few hours.
         </p>
 
         <section className="anc-sw-cta">
           <h2>How it works</h2>
           <p>
-            A pipeline runs every 3 hours. It ingests from roughly 45 configured feeds (last month
-            the stories it collected came from more than 1,300 different outlets), groups articles
+            A pipeline runs every 3 hours. It ingests from nearly 40 configured feeds (over the past
+            year the stories it collected came from more than 4,000 different outlets), groups articles
             that cover the same event, and scores each story on source authority, breadth of
             coverage, and impact. Nothing is published without a citation: every story shows its
             original sources with direct links and timestamps, and the site never reproduces full

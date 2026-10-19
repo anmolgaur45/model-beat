@@ -3,7 +3,6 @@ import { Geist, Geist_Mono, Bricolage_Grotesque } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import { SpeedInsights } from '@vercel/speed-insights/next'
 import './globals.css'
-import { Providers } from './providers'
 import { SiteFooter } from '@/components/SiteFooter'
 import { DigestTeaser } from '@/components/DigestTeaser'
 import { SITE_URL } from '@/lib/site'
@@ -21,7 +20,8 @@ const geistMono = Geist_Mono({
 const bricolage = Bricolage_Grotesque({
   variable: '--font-bricolage',
   subsets: ['latin'],
-  axes: ['opsz', 'wdth'],
+  // No `wdth`: nothing sets font-stretch, so it only added ~55 KB to the file.
+  axes: ['opsz'],
 })
 
 export const metadata: Metadata = {
@@ -138,7 +138,7 @@ export default function RootLayout({
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(SITE_JSONLD) }}
         />
-        <Providers>{children}</Providers>
+        {children}
         <SiteFooter />
         {/* Phase W: the floating digest signup widget — one mount for the whole
             site; the island derives copy/source from the pathname and stays

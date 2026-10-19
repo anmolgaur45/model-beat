@@ -9,6 +9,7 @@ import { AUTHOR_JSONLD, SITE_URL } from '@/lib/site'
 import { storyPath } from '@/lib/story'
 import { isPaperCluster } from '@/lib/papers'
 import HomePageClient from './HomePageClient'
+import { Providers } from './providers'
 
 // Prerendered at build, then refreshed after every pipeline run by the targeted
 // revalidate (api/revalidate).
@@ -112,12 +113,16 @@ export default async function HomePage() {
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
         />
       )}
-      <HomePageClient
-        initialDate={date}
-        initialClusters={clusters}
-        initialTopStories={topStories}
-        initialTopModels={topModels}
-      />
+      {/* tRPC + react-query (~26 KB gzipped) serve only this page's client
+          queries, so the provider lives here instead of the root layout. */}
+      <Providers>
+        <HomePageClient
+          initialDate={date}
+          initialClusters={clusters}
+          initialTopStories={topStories}
+          initialTopModels={topModels}
+        />
+      </Providers>
     </>
   )
 }

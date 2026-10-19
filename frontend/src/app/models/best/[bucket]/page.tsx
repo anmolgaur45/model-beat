@@ -1,7 +1,7 @@
 import { cache } from 'react'
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
-import { SITE_URL } from '@/lib/site'
+import { SITE_URL, socialMeta } from '@/lib/site'
 import { appRouter } from '@/server/routers/_app'
 import { createContext } from '@/server/trpc'
 import type { Model } from '@/types/article'
@@ -43,7 +43,7 @@ export async function generateMetadata({
     title,
     description: description.length > 160 ? `${description.slice(0, 157)}…` : description,
     alternates: { canonical: url },
-    openGraph: { type: 'website', title, description, url },
+    ...socialMeta(title, description, url),
   }
 }
 

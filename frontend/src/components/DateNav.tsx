@@ -9,6 +9,8 @@ interface Props {
   today: string
   selectedDate: string
   onSelect: (date: string) => void
+  // Start loading a date on hover, touch or keyboard focus, ahead of the click
+  onWarm?: (date: string) => void
   storyCounts?: Record<string, number>
 }
 
@@ -26,7 +28,7 @@ function formatRailLabel(dateStr: string, today: string): string {
   return `${day} ${num} · ${month}`
 }
 
-export function DateNav({ today, selectedDate, onSelect, storyCounts = {} }: Props) {
+export function DateNav({ today, selectedDate, onSelect, onWarm, storyCounts = {} }: Props) {
   const [daysShown, setDaysShown] = useState(7)
   const dates = getRecentDates(today, daysShown)
   const maxDays = 60
@@ -42,6 +44,8 @@ export function DateNav({ today, selectedDate, onSelect, storyCounts = {} }: Pro
             key={date}
             className={`anc-dt${isActive ? ' active' : ''}`}
             onClick={() => onSelect(date)}
+            onPointerEnter={() => onWarm?.(date)}
+            onFocus={() => onWarm?.(date)}
             suppressHydrationWarning
           >
             <span className="anc-dt-dot" />

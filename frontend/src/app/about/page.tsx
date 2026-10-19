@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
-import Link from 'next/link'
-import { SITE_URL } from '@/lib/site'
+import Link from '@/components/Link'
+import { SITE_URL, socialMeta } from '@/lib/site'
 import { NavBar } from '@/components/NavBar'
 
 const SITE = SITE_URL
@@ -11,13 +11,11 @@ export const metadata: Metadata = {
   description:
     'Who runs Model Beat, how the news pipeline and model tracker work, where the data comes from (Epoch AI, Artificial Analysis, OpenRouter), and how to reach us.',
   alternates: { canonical: `${SITE}/about` },
-  openGraph: {
-    type: 'website',
-    title: 'About Model Beat',
-    description:
-      'Who runs Model Beat, how the pipeline works, and where the data comes from.',
-    url: `${SITE}/about`,
-  },
+  ...socialMeta(
+    'About Model Beat',
+    'Who runs Model Beat, how the pipeline works, and where the data comes from.',
+    `${SITE}/about`,
+  ),
 }
 
 const JSONLD = {

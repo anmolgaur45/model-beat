@@ -20,3 +20,17 @@ export const AUTHOR_JSONLD = {
   '@id': `${SITE_URL}/about#anmol-gaur`,
   name: 'Anmol Gaur',
 } as const
+
+// A page's share card (Open Graph + Twitter). Next replaces the layout's
+// openGraph and twitter objects instead of merging them, so a page that set
+// only a title shared with the homepage's title, and one that set openGraph
+// without images shared with no image (2026-10-16 health check).
+export function socialMeta(title: string, description: string, url: string) {
+  // /api/og keeps 60 characters of the title; cut longer ones at a word.
+  const card = title.length > 60 ? `${title.slice(0, 59).replace(/\s+\S*$/, '')}…` : title
+  const image = `/api/og?title=${encodeURIComponent(card)}`
+  return {
+    openGraph: { type: 'website' as const, title, description, url, images: [{ url: image, width: 1200, height: 630 }] },
+    twitter: { card: 'summary_large_image' as const, title, description, images: [image] },
+  }
+}

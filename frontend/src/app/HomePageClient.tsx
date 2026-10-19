@@ -133,34 +133,23 @@ export default function HomePageClient({ initialDate, initialClusters, initialTo
     },
   )
 
-  // Warm the date rail in the background (2026-10-09): picking a date waited on a
-  // live iad1 -> Cloud SQL round trip. One date at a time, so each request is its
-  // own edge-cacheable URL (httpBatchLink merges calls made in the same tick).
+  // Fetch a date when the visitor points at, touches or tabs to it, so a pick
+  // doesn't wait on a live iad1 -> Cloud SQL round trip (2026-10-09). Until
+  // 2026-10-19 all 7 dates were fetched on every visit: ~270 KB and 6 requests,
+  // mostly for visitors who never picked a date. Hover lands a moment before
+  // the click, and each date is its own edge-cacheable URL.
   const utils = trpc.useUtils()
-  useEffect(() => {
-    if (!timelineMode) return
-    const conn = (navigator as Navigator & { connection?: { saveData?: boolean } }).connection
-    if (conn?.saveData) return
-    let cancelled = false
-    const warm = async () => {
-      for (const { iso } of getMobileDates(today, 7)) {
-        if (cancelled) return
-        await utils.articles.getClusters.prefetch(
-          { date: iso, category: categoryParam, limit: 100, by: 'peak' },
-          { staleTime: 5 * 60_000 },
-        )
-      }
-    }
-    const hasIdle = 'requestIdleCallback' in window
-    const handle = hasIdle
-      ? window.requestIdleCallback(() => void warm(), { timeout: 3000 })
-      : window.setTimeout(() => void warm(), 1500)
-    return () => {
-      cancelled = true
-      if (hasIdle) window.cancelIdleCallback(handle)
-      else window.clearTimeout(handle)
-    }
-  }, [timelineMode, categoryParam, utils, today])
+  const warmDate = useCallback(
+    (iso: string) => {
+      const conn = (navigator as Navigator & { connection?: { saveData?: boolean } }).connection
+      if (conn?.saveData) return
+      void utils.articles.getClusters.prefetch(
+        { date: iso, category: categoryParam, limit: 100, by: 'peak' },
+        { staleTime: 5 * 60_000 },
+      )
+    },
+    [utils, categoryParam],
+  )
 
   // Honest split for the hero count: pure-arXiv paper clusters are shelved
   // below the stories by DateSection, so don't count them as "stories".
@@ -247,6 +236,7 @@ export default function HomePageClient({ initialDate, initialClusters, initialTo
             today={today}
             selectedDate={selectedDate}
             onSelect={handleDateSelect}
+            onWarm={warmDate}
             storyCounts={storyCounts}
           />
         )}
@@ -291,6 +281,8 @@ export default function HomePageClient({ initialDate, initialClusters, initialTo
                   key={iso}
                   className={`anc-dpill${iso === selectedDate ? ' active' : ''}`}
                   onClick={() => handleDateSelect(iso)}
+                  onPointerEnter={() => warmDate(iso)}
+                  onFocus={() => warmDate(iso)}
                 >
                   <span className="anc-dpill-num">{parseInt(num, 10)}</span>
                   <span className="anc-dpill-wd">{weekday}</span>

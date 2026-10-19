@@ -2,7 +2,7 @@ import { cache } from 'react'
 import type { Metadata } from 'next'
 import Link from '@/components/Link'
 import { notFound } from 'next/navigation'
-import { SITE_URL } from '@/lib/site'
+import { SITE_URL, socialMeta } from '@/lib/site'
 import { appRouter } from '@/server/routers/_app'
 import { createContext } from '@/server/trpc'
 import type { Model } from '@/types/article'
@@ -162,8 +162,10 @@ export async function generateMetadata({
     title,
     description: desc.length > 160 ? `${desc.slice(0, 157)}…` : desc,
     alternates: { canonical: url },
-    robots: indexable ? undefined : { index: false, follow: true },
-    openGraph: { type: 'website', title, description: desc, url },
+    // Omitted (not undefined) when indexable: an explicit undefined replaced
+    // the layout's robots and dropped its max-image-preview:large.
+    ...(indexable ? {} : { robots: { index: false, follow: true } }),
+    ...socialMeta(title, desc, url),
   }
 }
 

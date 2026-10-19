@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
-import Link from 'next/link'
+import Link from '@/components/Link'
 import { notFound } from 'next/navigation'
-import { SITE_URL } from '@/lib/site'
+import { SITE_URL, socialMeta } from '@/lib/site'
 import { NavBar } from '@/components/NavBar'
 import { DigestForm } from '@/components/DigestForm'
 import { getIssue, listIssues } from '@/lib/digestIssues'
@@ -21,10 +21,14 @@ export async function generateMetadata({ params }: { params: Promise<{ date: str
   const { date } = await params
   const issue = getIssue(date)
   if (!issue) return {}
+  const description = issue.meta.preview || `The Model Beat Digest issue of ${date}.`
   return {
-    title: `${issue.meta.title} | Digest ${date}`,
-    description: issue.meta.preview || `The Model Beat Digest issue of ${date}.`,
+    // The subject line alone: the layout template adds "| Model Beat", and the
+    // extra "| Digest <date>" made titles of 114-125 characters.
+    title: issue.meta.title,
+    description,
     alternates: { canonical: `${SITE}/digest/${date}` },
+    ...socialMeta(issue.meta.title, description, `${SITE}/digest/${date}`),
   }
 }
 

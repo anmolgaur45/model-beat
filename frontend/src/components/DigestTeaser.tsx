@@ -26,13 +26,14 @@ function loadTeaser(): Promise<Teaser> {
 // composed teaser rows (trailing 7 days) once per page render and hands them
 // to the client island, which handles pathname copy, scroll-triggered
 // visibility, and dismissal. A signup card must never take a page down, so
-// any fetch failure renders nothing.
+// any fetch failure renders nothing (render errors are caught in the card).
 export async function DigestTeaser() {
+  let teaser: Teaser
   try {
-    const teaser = await loadTeaser()
-    if (teaser.rows.length === 0) return null
-    return <DigestTeaserCard teaser={teaser} />
+    teaser = await loadTeaser()
   } catch {
     return null
   }
+  if (teaser.rows.length === 0) return null
+  return <DigestTeaserCard teaser={teaser} />
 }

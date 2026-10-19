@@ -25,7 +25,10 @@ export async function GET() {
         WHERE mb.model_id = m.id AND mb.benchmark = 'Epoch Capabilities Index') AS eci
     FROM models m
     WHERE m.released_at >= now() - interval '1 year'
-    ORDER BY m.significance DESC NULLS LAST, m.released_at DESC NULLS LAST
+    -- ECI first, the order of the "Best AI Models, Ranked" page. Ranking by
+    -- significance led with minor models and left out Opus 5.5 and GPT-6 Astra
+    -- (2026-10-16 health check).
+    ORDER BY eci DESC NULLS LAST, m.significance DESC NULLS LAST, m.released_at DESC NULLS LAST
     LIMIT 40
   `
 

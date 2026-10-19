@@ -1,3 +1,4 @@
+import { createHash, timingSafeEqual } from 'node:crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { revalidatePath } from 'next/cache'
 import sql from '@/lib/db'
@@ -55,7 +56,10 @@ async function pingIndexNow(paths: string[]) {
 export async function POST(req: NextRequest) {
   const secret = process.env.CRON_SECRET
   const auth = req.headers.get('authorization') ?? ''
-  if (!secret || auth !== `Bearer ${secret}`) {
+  // Constant-time compare (`!==` stops at the first differing character).
+  // Hashing first gives equal lengths, which timingSafeEqual requires.
+  const digest = (s: string) => createHash('sha256').update(s).digest()
+  if (!secret || !timingSafeEqual(digest(auth), digest(`Bearer ${secret}`))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

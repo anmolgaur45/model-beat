@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import Link from '@/components/Link'
-import { SITE_URL } from '@/lib/site'
+import { SITE_URL, socialMeta } from '@/lib/site'
 import { appRouter } from '@/server/routers/_app'
 import { createContext } from '@/server/trpc'
 import type { Model } from '@/types/article'
@@ -60,9 +60,11 @@ export async function generateMetadata({
     // The no-ids landing is an indexable hub (picker + popular comparisons); the
     // parametric tool states are not — the clean /models/compare/[pair] pages are
     // the indexable comparison assets.
-    robots: slugs.length === 0 ? undefined : { index: false, follow: true },
+    // Omitted (not undefined) for the hub, so the layout's robots and its
+    // max-image-preview:large still apply.
+    ...(slugs.length === 0 ? {} : { robots: { index: false, follow: true } }),
     alternates: { canonical: canonicalFor(slugs) },
-    openGraph: { type: 'website', title, description, url: canonicalFor(slugs) },
+    ...socialMeta(title, description, canonicalFor(slugs)),
   }
 }
 

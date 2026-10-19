@@ -32,14 +32,13 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // Per-model pages (Phase K) — one URL per canonical model in the registry.
   // Same quality gate as the page's robots meta: registry stubs with no
   // benchmarks, no pricing, and no linked news stay out until data arrives.
+  // No age cutoff: pages for models over a year old stay indexable, and the
+  // old 1-year window left them orphaned (2026-10-16 health check).
   const modelRows = await sql<{ slug: string; updated_at: string }[]>`
     SELECT slug, updated_at FROM models m
-    WHERE released_at >= now() - interval '1 year'
-      AND (
-        price_in IS NOT NULL
-        OR EXISTS (SELECT 1 FROM model_benchmarks mb WHERE mb.model_id = m.id)
-        OR EXISTS (SELECT 1 FROM model_clusters mc WHERE mc.model_id = m.id)
-      )
+    WHERE price_in IS NOT NULL
+       OR EXISTS (SELECT 1 FROM model_benchmarks mb WHERE mb.model_id = m.id)
+       OR EXISTS (SELECT 1 FROM model_clusters mc WHERE mc.model_id = m.id)
     ORDER BY released_at DESC NULLS LAST
   `
   const modelPages: MetadataRoute.Sitemap = modelRows.map((m) => ({
@@ -91,6 +90,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     })),
     { url: `${SITE}/about`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.5 },
     { url: `${SITE}/methodology`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.5 },
+    { url: `${SITE}/stack-watch`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.4 },
     ...BEST_VIEWS.map((v) => ({
       url: `${SITE}/models/best/${v.key}`,
       lastModified: new Date(),

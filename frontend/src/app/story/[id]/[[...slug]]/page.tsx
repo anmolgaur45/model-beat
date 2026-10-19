@@ -3,7 +3,7 @@ import type { Metadata } from 'next'
 import Link from '@/components/Link'
 import { TRPCError } from '@trpc/server'
 import { notFound } from 'next/navigation'
-import { SITE_URL } from '@/lib/site'
+import { AUTHOR_JSONLD, SITE_URL } from '@/lib/site'
 import { appRouter } from '@/server/routers/_app'
 import { createContext } from '@/server/trpc'
 import type { Category } from '@/types/article'
@@ -79,7 +79,9 @@ export async function generateMetadata({
     title,
     description,
     alternates: { canonical: url },
-    robots: isIndexableStory(story) ? undefined : { index: false, follow: true },
+    // Omitted (not undefined) when indexable: an explicit undefined replaced
+    // the layout's robots and dropped its max-image-preview:large.
+    ...(isIndexableStory(story) ? {} : { robots: { index: false, follow: true } }),
     openGraph: {
       type: 'article',
       title,
@@ -125,7 +127,10 @@ export default async function StoryPage({
         name: 'Model Beat',
         logo: { '@type': 'ImageObject', url: `${SITE}/api/og` },
       },
-      ...(story.articles[0]?.author ? { author: { '@type': 'Person', name: story.articles[0].author } } : {}),
+      // This page is Model Beat's synthesis, so it is authored by the site's
+      // editor (as on the homepage), not by the lead article's journalist. The
+      // journalists' work is credited through the citations below.
+      author: AUTHOR_JSONLD,
       // The multi-source synthesis is the differentiator: cite every source,
       // not just the lead article.
       ...(story.articles.length

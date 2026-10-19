@@ -1,13 +1,17 @@
 import type { Metadata } from 'next'
-import Link from 'next/link'
+import Link from '@/components/Link'
 import { NavBar } from '@/components/NavBar'
-import { SITE_URL } from '@/lib/site'
+import { SITE_URL, socialMeta } from '@/lib/site'
+
+const TITLE = 'Methodology: how stories are grouped and scored'
+const DESCRIPTION =
+  'How Model Beat deduplicates AI news and computes the 1-10 significance score: authority-weighted coverage, corroboration, and AI-rated impact, explained openly.'
 
 export const metadata: Metadata = {
-  title: 'Methodology: how stories are grouped and scored',
-  description:
-    'How Model Beat deduplicates AI news and computes the 1-10 significance score: authority-weighted coverage, corroboration, and AI-rated impact, explained openly.',
+  title: TITLE,
+  description: DESCRIPTION,
   alternates: { canonical: '/methodology' },
+  ...socialMeta(TITLE, DESCRIPTION, `${SITE_URL}/methodology`),
 }
 
 // Static, content-only page; nothing here reads the database.

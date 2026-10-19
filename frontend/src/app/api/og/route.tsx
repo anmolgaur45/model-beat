@@ -1,6 +1,7 @@
 import { ImageResponse } from 'next/og'
 
-export const runtime = 'edge'
+// Default (Node.js) runtime: Next deprecated the Edge runtime, and Vercel's
+// build log warned about this route.
 
 const ACCENT = '#3ad17f'
 const ACCENT2 = '#3cc6d6'

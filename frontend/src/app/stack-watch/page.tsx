@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
-import Link from 'next/link'
-import { SITE_URL } from '@/lib/site'
+import Link from '@/components/Link'
+import { SITE_URL, socialMeta } from '@/lib/site'
 import { NavBar } from '@/components/NavBar'
 import { WaitlistForm } from '@/components/WaitlistForm'
 
@@ -11,13 +11,11 @@ export const metadata: Metadata = {
   description:
     'Get told the moment a model you depend on is deprecated, drops in price, ships a new version, or gets beaten by a cheaper alternative. Early access.',
   alternates: { canonical: `${SITE}/stack-watch` },
-  openGraph: {
-    type: 'website',
-    title: 'AI Stack Watch — alerts when the models you use change',
-    description:
-      'Deprecations, price drops, new versions, better alternatives. Stop getting blindsided by the models you ship on.',
-    url: `${SITE}/stack-watch`,
-  },
+  ...socialMeta(
+    'AI Stack Watch — alerts when the models you use change',
+    'Deprecations, price drops, new versions, better alternatives. Stop getting blindsided by the models you ship on.',
+    `${SITE}/stack-watch`,
+  ),
 }
 
 const ALERTS = [

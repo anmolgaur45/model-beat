@@ -115,7 +115,9 @@ export async function generateMetadata({
     title: `AI news on ${label}`,
     description,
     alternates: { canonical: url },
-    robots: isIndexableDay(date, clusters.filter((c) => !isPaperCluster(c)).length) ? undefined : { index: false, follow: true },
+    // Omitted (not undefined) when indexable: an explicit undefined replaced
+    // the layout's robots and dropped its max-image-preview:large.
+    ...(isIndexableDay(date, metaStories.length) ? {} : { robots: { index: false, follow: true } }),
     openGraph: {
       type: 'article',
       title: `AI news on ${label}`,

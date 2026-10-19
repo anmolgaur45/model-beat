@@ -1,16 +1,20 @@
 import type { Metadata } from 'next'
-import Link from 'next/link'
+import Link from '@/components/Link'
 import { NavBar } from '@/components/NavBar'
-import { SITE_URL } from '@/lib/site'
+import { SITE_URL, socialMeta } from '@/lib/site'
 import { appRouter } from '@/server/routers/_app'
 import { createContext } from '@/server/trpc'
 import type { ModelEvent } from '@/types/article'
 
+const TITLE = 'Model changes: prices, context windows, benchmarks'
+const DESCRIPTION =
+  'A running feed of what changed across tracked AI models in the last 30 days: vendor price moves, cheapest-provider shifts, context window changes, benchmark movement, and newly tracked models.'
+
 export const metadata: Metadata = {
-  title: 'Model changes: prices, context windows, benchmarks',
-  description:
-    'A running feed of what changed across tracked AI models in the last 30 days: vendor price moves, cheapest-provider shifts, context window changes, benchmark movement, and newly tracked models.',
+  title: TITLE,
+  description: DESCRIPTION,
   alternates: { canonical: '/models/changes' },
+  ...socialMeta(TITLE, DESCRIPTION, `${SITE_URL}/models/changes`),
 }
 
 function fmtDate(iso: string): string {
@@ -73,6 +77,9 @@ export default async function ModelChangesPage() {
           moves, shifts in the cheapest credible provider, context window changes, benchmark
           movement, and newly tracked models. Detected automatically every 3 hours; how it works
           is on the <Link href="/methodology">methodology page</Link>.{' '}
+          {/* A plain <a> on purpose: the feed is an XML route handler, not a page
+              that client-side navigation could render. */}
+          {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
           <a href="/models/changes/rss">Subscribe via RSS</a>.
         </p>
 

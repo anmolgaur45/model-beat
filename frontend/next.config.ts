@@ -39,6 +39,8 @@ const nextConfig: NextConfig = {
   // For the contingency Docker image (see Dockerfile); Vercel ignores this.
   output: 'standalone',
   productionBrowserSourceMaps: false,
+  // No X-Powered-By: Next.js header on every response.
+  poweredByHeader: false,
   // Digest issue markdown (Phase W4) is read with fs at render time when a
   // revalidate re-renders these routes on Vercel; without explicit tracing
   // the .md files wouldn't ship in the serverless bundle (ENOENT).

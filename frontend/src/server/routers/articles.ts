@@ -34,6 +34,10 @@ export type RelatedStory = {
 
 // Article columns to fetch — excludes the large embedding vector
 const ARTICLE_COLS = sql`id, title, body_excerpt, source_name, source_url, author, published_at, raw_category, cluster_id, impact_score, created_at`
+// Cluster columns to fetch: all but headline_tsv, the search vector, which only
+// the search WHERE clause reads. SELECT * shipped it to the browser in every
+// homepage day payload (~7% of it, 2026-10-19).
+const CLUSTER_COLS = sql`id, headline, category, significance_score, first_published_at, peak_date, article_count, summary, created_at`
 
 // ── Search synonym expansion ────────────────────────────────────────────────
 const SEARCH_SYNONYMS: Record<string, string[]> = {
@@ -164,7 +168,7 @@ export const articlesRouter = router({
       const since = new Date(Date.now() - input.days * 86_400_000).toISOString()
 
       const clusters = await sql<Cluster[]>`
-        SELECT * FROM clusters
+        SELECT ${CLUSTER_COLS} FROM clusters
         WHERE first_published_at >= ${since}
           AND significance_score >= ${input.minScore}
         ORDER BY significance_score DESC, first_published_at DESC
@@ -205,7 +209,7 @@ export const articlesRouter = router({
       const since = new Date(Date.now() - input.days * 86_400_000).toISOString()
 
       const clusters = await sql<Cluster[]>`
-        SELECT * FROM clusters
+        SELECT ${CLUSTER_COLS} FROM clusters
         WHERE category = 'model-releases'
           AND first_published_at >= ${since}
           AND significance_score > 0
@@ -273,7 +277,7 @@ export const articlesRouter = router({
       // exhausted the fetch limit, leaving "Today" showing 1 story + a paper
       // shelf until news outscored them later in the day (2026-07-10).
       const clusters = await sql<Cluster[]>`
-        SELECT * FROM clusters
+        SELECT ${CLUSTER_COLS} FROM clusters
         WHERE 1=1
         ${categoryFilter}
         ${dateFilter}
@@ -363,7 +367,7 @@ export const articlesRouter = router({
     .input(z.object({ id: z.string().uuid() }))
     .query(async ({ input }) => {
       const [cluster] = await sql<Cluster[]>`
-        SELECT * FROM clusters WHERE id = ${input.id}
+        SELECT ${CLUSTER_COLS} FROM clusters WHERE id = ${input.id}
       `
 
       if (!cluster) {
@@ -488,7 +492,7 @@ export const articlesRouter = router({
 
       // Query 1: FTS on cluster headlines
       const headlineClusters = await sql<Cluster[]>`
-        SELECT * FROM clusters
+        SELECT ${CLUSTER_COLS} FROM clusters
         WHERE headline_tsv @@ websearch_to_tsquery('english', ${ftsQuery})
         ${categoryFilter}
         ${dateFromFilter}
@@ -527,7 +531,7 @@ export const articlesRouter = router({
 
       if (extraIds.length > 0) {
         const extraClusters = await sql<Cluster[]>`
-          SELECT * FROM clusters
+          SELECT ${CLUSTER_COLS} FROM clusters
           WHERE id = ANY(${extraIds})
           ${categoryFilter}
           ${dateFromFilter}
@@ -661,7 +665,7 @@ export const articlesRouter = router({
       }
 
       const clusters = await sql<Cluster[]>`
-        SELECT c.* FROM clusters c
+        SELECT ${CLUSTER_COLS} FROM clusters c
         JOIN model_clusters mc ON mc.cluster_id = c.id
         WHERE mc.model_id = ${model.id}
         ORDER BY c.first_published_at DESC
@@ -697,7 +701,11 @@ export const articlesRouter = router({
         LIMIT 40
       `
 
-      return { ...model, benchmarks, clusters: withArticles, events }
+      // headline_score is the ECI, as getModels sets it. Without it here the
+      // model page's answer line silently dropped its "scores N on the Epoch
+      // Capabilities Index" clause (found 2026-10-17).
+      const headline_score = benchmarks.find((b) => b.benchmark === 'Epoch Capabilities Index')?.score ?? null
+      return { ...model, headline_score, benchmarks, clusters: withArticles, events }
     }),
 
   // Phase V: the change feed — recent model_events across all models, joined to

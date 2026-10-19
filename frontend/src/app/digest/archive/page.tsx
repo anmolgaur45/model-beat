@@ -1,16 +1,20 @@
 import type { Metadata } from 'next'
-import Link from 'next/link'
-import { SITE_URL } from '@/lib/site'
+import Link from '@/components/Link'
+import { SITE_URL, socialMeta } from '@/lib/site'
 import { NavBar } from '@/components/NavBar'
 import { listIssues } from '@/lib/digestIssues'
 
 const SITE = SITE_URL
 
+const TITLE = 'Past issues of The Model Beat Digest'
+const DESCRIPTION =
+  'Every sent issue of the free weekly Model Beat digest, published in full: the AI stories that mattered, new models, price moves and deprecations.'
+
 export const metadata: Metadata = {
-  title: 'Past issues of The Model Beat Digest',
-  description:
-    'Every sent issue of the free weekly Model Beat digest, published in full: the AI stories that mattered, new models, price moves and deprecations.',
+  title: TITLE,
+  description: DESCRIPTION,
   alternates: { canonical: `${SITE}/digest/archive` },
+  ...socialMeta(TITLE, DESCRIPTION, `${SITE}/digest/archive`),
 }
 
 function fmtDate(iso: string): string {

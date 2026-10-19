@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
-import Link from 'next/link'
-import { SITE_URL } from '@/lib/site'
+import Link from '@/components/Link'
+import { SITE_URL, socialMeta } from '@/lib/site'
 import { appRouter } from '@/server/routers/_app'
 import { createContext } from '@/server/trpc'
 import type { DigestTeaser } from '@/types/article'
@@ -14,19 +14,16 @@ const SITE = SITE_URL
 // week section below is the same data the Thursday issue is curated from,
 // refreshed after every pipeline run by the targeted revalidate.
 
+const TITLE = 'The Model Beat Digest: the week in AI models'
+const DESCRIPTION =
+  'Three minutes every Thursday: the week\'s top AI stories ranked by significance, every model price and benchmark move from the Model Beat tracker, and a short personal take. Free.'
+
 export const metadata: Metadata = {
   // absolute: the layout template appends "| Model Beat", which double-brands
-  title: { absolute: 'The Model Beat Digest: the week in AI models' },
-  description:
-    'Three minutes every Thursday: the week\'s top AI stories ranked by significance, every model price and benchmark move from the Model Beat tracker, and a short personal take. Free.',
+  title: { absolute: TITLE },
+  description: DESCRIPTION,
   alternates: { canonical: `${SITE}/digest` },
-  openGraph: {
-    type: 'website',
-    title: 'The Model Beat Digest: the week in AI models',
-    description:
-      'Three minutes every Thursday: the week\'s top AI stories ranked by significance, every model price and benchmark move from the Model Beat tracker, and a short personal take. Free.',
-    url: `${SITE}/digest`,
-  },
+  ...socialMeta(TITLE, DESCRIPTION, `${SITE}/digest`),
 }
 
 const SECTIONS = [

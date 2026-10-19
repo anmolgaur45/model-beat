@@ -177,11 +177,13 @@ class TestIsMarketReport:
         assert is_market_report("AI Fridge Market to Reach $6.27 Billion by 2030: Key Trends and Growth Drivers")
         assert is_market_report("AI Curtains Global Market Report 2026")
         assert is_market_report("Market Report on Artificial Intelligence (AI)-Driven Compliance Tools Analyzes Market Trends")
+        assert is_market_report("Artificial Intelligence (AI)-Powered Pathology Analysis System Market Global Report 2026")
 
     def test_market_news_passes(self):
         assert not is_market_report("Foxconn third-quarter revenue soars on AI demand, beats market forecast")
         assert not is_market_report("AI Chipmaker Biren Taps Market Again in $515 Million Share Sale")
         assert not is_market_report("DeepSeek has 64% market share")
+        assert not is_market_report("Stock market crash report: what AI stocks did today")
 
 
 class TestBuildNormalizedArticle:

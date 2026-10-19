@@ -160,6 +160,9 @@ _MARKET_REPORT_RE = re.compile(
     r"|\bmarket\s+(size|research|report|study|insights|segmentation)\b"
     r"|\bmarket\s+competitive\s+landscape\b"
     r"|\bglobal\s+(\w+\s+){0,3}market\s+report\b"
+    # "... System Market Global Report 2026" (2026-10-19): the year marks it a
+    # template; across 40k titles this matched only those releases.
+    r"|\bmarket\s+(\w+\s+){1,2}report\s+20\d\d\b"
     r"|\bmarket\b.{0,80}?\b(by|through|to)\s+20[3-4]\d\b",
     re.IGNORECASE,
 )

@@ -1,5 +1,9 @@
 -- Enable pgvector extension for semantic similarity search
 CREATE EXTENSION IF NOT EXISTS vector;
+-- Trigram matching for the search's source_name ILIKE (2026-10-18), and query
+-- statistics (Cloud SQL already preloads the library; this exposes the view).
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
 
 -- Raw ingested articles (pre-clustering)
 CREATE TABLE IF NOT EXISTS articles (
@@ -48,6 +52,22 @@ CREATE INDEX IF NOT EXISTS idx_clusters_category     ON clusters (category);
 -- place on the single-day query shape.
 CREATE INDEX IF NOT EXISTS idx_articles_cluster_non_arxiv
   ON articles (cluster_id) WHERE source_name NOT LIKE 'arXiv%';
+-- Search's "source_name ILIKE ANY" match (2026-10-18). Without it every search
+-- read the whole 165 MB heap: "claude" took 1.8-2.6 s cold. With it, 10-50 ms.
+-- Patterns under 3 letters ("ai") have no trigrams; they stay on
+-- idx_articles_published_at, which stops early at the 500-row limit.
+CREATE INDEX IF NOT EXISTS idx_articles_source_name_trgm
+  ON articles USING gin (source_name gin_trgm_ops);
+-- prune_old_embeddings (2026-10-18): only ~25k rows keep a vector (30-day
+-- retention), so this stays under 1 MB and turns the per-run full scan into
+-- an index lookup (137 ms -> 0.1 ms).
+CREATE INDEX IF NOT EXISTS idx_articles_embedded_published_at
+  ON articles (published_at) WHERE embedding IS NOT NULL;
+-- embed_pending (2026-10-19): without it the query walked all ~25k articles in
+-- the 30-day window and read each row to test embedding IS NULL, 1.6-3.2 s a run
+-- even with nothing pending. With it, 0.05 ms.
+CREATE INDEX IF NOT EXISTS idx_articles_unembedded_published_at
+  ON articles (published_at DESC) WHERE embedding IS NULL;
 -- Add significance_base to articles for use during clustering (Phase 2)
 ALTER TABLE articles ADD COLUMN IF NOT EXISTS significance_base FLOAT DEFAULT 0;
 -- HNSW index on article embeddings for fast approximate nearest-neighbor search

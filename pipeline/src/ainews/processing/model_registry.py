@@ -671,6 +671,7 @@ _ENDPOINT_PRICE_FIELDS: dict[str, tuple[str, str, bool]] = {
     "floor_price_in":   ("floor", "input", False),
     "floor_price_out":  ("floor", "output", False),
 }
+_FLOOR_FIELDS = ("floor_price_in", "floor_price_out")
 
 
 def _price_changed(old: float | None, new: float | None, exact: bool) -> bool:
@@ -690,24 +691,40 @@ def endpoint_change_events(
 
     A change (including a value appearing or disappearing) is written only when
     the SAME candidate value survives two consecutive samples; the first sighting
-    just lands in the pending buffer. Events fire only for numeric→numeric moves
-    (a provider delisting is not a reprice). Returns (model_events rows,
-    confirmed column updates, new pending buffer). Pure and unit-testable.
+    just lands in the pending buffer. Vendor sides debounce independently; the
+    floor debounces as one (input, output) pair, because it is a single
+    provider's offer. Confirming its sides separately stored GLM-5.3-Flash at
+    Relace's $0.0052 input beside Wafer's $0.20 output (2026-10-23), a price no
+    provider sold. Events fire only for numeric→numeric moves (a provider
+    delisting is not a reprice). Returns (model_events rows, confirmed column
+    updates, new pending buffer). Pure and unit-testable.
     """
     events: list[dict] = []
     updates: dict = {}
     new_pending = dict(pending)
-    floor_confirmed = False
 
-    for field, (scope, direction, exact) in _ENDPOINT_PRICE_FIELDS.items():
+    def price_event(field: str, o: float, n: float) -> dict:
+        scope, direction, _ = _ENDPOINT_PRICE_FIELDS[field]
+        rel = (n - o) / o
+        if scope == "vendor":
+            verb = "cut" if n < o else "raised"
+            summary = (f"{name}: vendor list price {verb} from ${o:g} to ${n:g} "
+                       f"per 1M {direction} tokens ({rel:+.0%})")
+        else:
+            via = f" via {fresh.get('floor_provider')}" if fresh.get("floor_provider") else ""
+            summary = (f"{name}: cheapest credible provider{via} now ${n:g} "
+                       f"per 1M {direction} tokens (was ${o:g}, {rel:+.0%})")
+        return {
+            "event_type": "price",
+            "price_scope": scope,
+            "summary": summary,
+            "old_value": f"{o:g}",
+            "new_value": f"{n:g}",
+        }
+
+    for field in ("vendor_price_in", "vendor_price_out"):
         o, n = stored.get(field), fresh.get(field)
-        if scope == "floor" and n is None and o is not None:
-            # The credible set went empty (every row discounted/degraded), not a
-            # price move. price_in/out doubles as the display price, so keep the
-            # last-known value rather than blanking the model.
-            new_pending.pop(field, None)
-            continue
-        if not _price_changed(o, n, exact):
+        if not _price_changed(o, n, exact=True):
             new_pending.pop(field, None)
             continue
         if field not in new_pending or new_pending[field] != n:
@@ -718,33 +735,32 @@ def endpoint_change_events(
         # Second consecutive sample with the same value: confirmed.
         new_pending.pop(field)
         updates[field] = n
-        if scope == "floor":
-            floor_confirmed = True
-        if o is None or n is None:
-            continue
-        rel = (n - o) / o
-        if scope == "vendor":
-            verb = "cut" if n < o else "raised"
-            summary = (f"{name}: vendor list price {verb} from ${o:g} to ${n:g} "
-                       f"per 1M {direction} tokens ({rel:+.0%})")
-        else:
-            via = f" via {fresh.get('floor_provider')}" if fresh.get("floor_provider") else ""
-            summary = (f"{name}: cheapest credible provider{via} now ${n:g} "
-                       f"per 1M {direction} tokens (was ${o:g}, {rel:+.0%})")
-        events.append({
-            "event_type": "price",
-            "price_scope": scope,
-            "summary": summary,
-            "old_value": f"{o:g}",
-            "new_value": f"{n:g}",
-        })
+        if o is not None and n is not None:
+            events.append(price_event(field, o, n))
 
-    if floor_confirmed:
-        # Keep the floor metadata in step with the confirmed floor price; between
-        # confirmations it describes the last confirmed floor, not the pending one.
+    candidate = {f: fresh.get(f) for f in _FLOOR_FIELDS}
+    moved = [f for f in _FLOOR_FIELDS if _price_changed(stored.get(f), candidate[f], exact=False)]
+    if candidate["floor_price_in"] is None or not moved:
+        # No move beyond jitter, or the credible set went empty (every row
+        # discounted/degraded), which is not a price move either: price_in/out
+        # doubles as the display price, so keep the last-known pair.
+        for f in _FLOOR_FIELDS:
+            new_pending.pop(f, None)
+    elif any(f not in new_pending or new_pending[f] != candidate[f] for f in _FLOOR_FIELDS):
+        new_pending.update(candidate)
+    else:
+        # Confirmed: write BOTH sides (a side under the jitter threshold too) so
+        # the stored pair and its metadata describe one provider.
+        for f in _FLOOR_FIELDS:
+            new_pending.pop(f)
+        updates.update(candidate)
         updates["floor_provider"] = fresh.get("floor_provider")
         updates["floor_quant"] = fresh.get("floor_quant")
         updates["floor_context"] = fresh.get("floor_context")
+        for f in moved:
+            o, n = stored.get(f), candidate[f]
+            if o is not None and n is not None:
+                events.append(price_event(f, o, n))
 
     return events, updates, new_pending
 

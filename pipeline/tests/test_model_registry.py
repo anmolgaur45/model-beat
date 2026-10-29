@@ -1071,3 +1071,33 @@ def test_endpoint_change_reverted_candidate_clears_pending():
     events, updates, new_pending = endpoint_change_events(
         "M", stored, _fresh(fin=1.00, fout=2.00), pending)
     assert events == [] and updates == {} and new_pending == {}
+
+
+def test_endpoint_change_floor_never_mixes_two_providers():
+    # GLM-5.3-Flash, 2026-10-21/23: Wafer's output side confirmed alone, then
+    # Relace's input side did while its output kept moving, storing $0.0052
+    # beside $0.20, a pair nobody sold. The pair now confirms together or not at all.
+    stored = {"vendor_price_in": 0.15, "vendor_price_out": 0.5,
+              "floor_price_in": 0.1312, "floor_price_out": 0.4375}
+    wafer = _fresh(vin=0.15, vout=0.5, fin=0.13, fout=0.20, provider="Wafer")
+    _, _, pending = endpoint_change_events("GLM-5.3-Flash", stored, wafer, {})
+    relace_1 = _fresh(vin=0.15, vout=0.5, fin=0.0052, fout=0.30, provider="Relace")
+    events, updates, pending = endpoint_change_events("GLM-5.3-Flash", stored, relace_1, pending)
+    assert events == [] and updates == {}
+    relace_2 = _fresh(vin=0.15, vout=0.5, fin=0.0052, fout=0.31, provider="Relace")
+    events, updates, pending = endpoint_change_events("GLM-5.3-Flash", stored, relace_2, pending)
+    assert events == [] and updates == {}
+    assert pending == {"floor_price_in": 0.0052, "floor_price_out": 0.31}
+
+
+def test_endpoint_change_confirmed_floor_writes_both_sides():
+    # Output moved 2% (under the event threshold) but still lands, so the
+    # stored pair is the new provider's; only the input side fires an event.
+    stored = {"vendor_price_in": None, "vendor_price_out": None,
+              "floor_price_in": 1.00, "floor_price_out": 2.00}
+    fresh = _fresh(fin=0.50, fout=2.04, provider="Acme")
+    _, _, pending = endpoint_change_events("M", stored, fresh, {})
+    events, updates, pending = endpoint_change_events("M", stored, fresh, pending)
+    assert updates["floor_price_in"] == 0.50 and updates["floor_price_out"] == 2.04
+    assert updates["floor_provider"] == "Acme" and pending == {}
+    assert len(events) == 1 and "input" in events[0]["summary"]

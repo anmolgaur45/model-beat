@@ -2282,7 +2282,7 @@ mark.anc-hl { background: var(--accent-dim); color: var(--accent-text); border-r
 }
 /* Issue pages (Phase W4): digest formatting on top of the base prose styles.
    Scannability rules: one story per block, a headline that reads alone
-   (numbered — the stories are ranked by coverage), body relegated to text2,
+   (numbered in the issue's order), body relegated to text2,
    the link as a consistent affordance ending each block. */
 .anc-issue h2 {
   margin: 42px 0 4px;

@@ -16,7 +16,7 @@ const SITE = SITE_URL
 
 const TITLE = 'The Model Beat Digest: the week in AI models'
 const DESCRIPTION =
-  'Three minutes every Thursday: the week\'s top AI stories ranked by significance, every model price and benchmark move from the Model Beat tracker, and a short personal take. Free.'
+  'Three minutes every Thursday: the week\'s top AI stories for developers, every official model price change and benchmark jump from the Model Beat tracker, and a short personal take. Free.'
 
 export const metadata: Metadata = {
   // absolute: the layout template appends "| Model Beat", which double-brands
@@ -30,12 +30,12 @@ const SECTIONS = [
   {
     tag: 'Top stories',
     title: 'What actually mattered this week',
-    body: 'Ranked by our significance engine across 4,000+ outlets, deduplicated to one entry per story. No filler.',
+    body: 'Picked for developers first, then ranked by our significance engine across 4,000+ outlets, deduplicated to one entry per story. No filler.',
   },
   {
     tag: 'Model moves',
     title: 'What changed in the tracker',
-    body: 'New models, price changes, benchmark movements and deprecations, straight from the Model Beat registry.',
+    body: 'New models, official price changes, benchmark movements and deprecations, straight from the Model Beat registry.',
   },
   {
     tag: 'Personal take',
@@ -69,9 +69,10 @@ export default async function DigestPage() {
         <div className="anc-kicker">Free weekly email</div>
         <h1 className="anc-sw-h1">The week in AI models. One email, Thursdays.</h1>
         <p className="anc-sw-lead">
-          Three minutes every Thursday: the week&rsquo;s top stories ranked by our significance
-          engine, every price move, benchmark jump and new model from the 250+ we track, and a
-          short personal take. Written from our own tracker data, not paraphrased headlines.
+          Three minutes every Thursday: the week&rsquo;s top stories, picked for developers first
+          and then ranked by our significance engine, every official price change and benchmark
+          jump, notable new models from the 250+ we track, and a short personal take. Written from
+          our own tracker data, not paraphrased headlines.
         </p>
 
         {teaser && teaser.rows.length > 0 && (

@@ -1101,3 +1101,114 @@ def test_endpoint_change_confirmed_floor_writes_both_sides():
     assert updates["floor_price_in"] == 0.50 and updates["floor_price_out"] == 2.04
     assert updates["floor_provider"] == "Acme" and pending == {}
     assert len(events) == 1 and "input" in events[0]["summary"]
+
+
+def test_parse_endpoints_context_is_the_largest_any_host_offers():
+    # Mistral lists Large 4 at 524K on its EU row and 1M on its main one.
+    mistral = {"endpoints": [
+        _ep("Mistral", 0.77, 2.31, ctx=524_288, tag="mistral/eu"),
+        _ep("Mistral", 0.70, 2.10, ctx=1_048_576, tag="mistral/zdr"),
+    ]}
+    assert parse_endpoints(mistral, "mistralai")["context_window"] == 1_048_576
+    # MiniMax's own row lists M3's guaranteed minimum; MiniMax sells up to 1M.
+    minimax = {"endpoints": [
+        _ep("MiniMax", 0.30, 1.20, ctx=524_288),
+        _ep("Parasail", 0.25, 1.10, quant="fp8", ctx=1_048_576),
+        _ep("Venice", 0.20, 1.00, quant="fp8", ctx=524_288),
+    ]}
+    assert parse_endpoints(minimax, "minimax")["context_window"] == 1_048_576
+
+
+def test_parse_endpoints_context_ignores_service_tiers_and_empty_payloads():
+    data = {"endpoints": [
+        _ep("OpenAI", 10.0, 50.0, ctx=1_000_000),
+        _ep("OpenAI", 60.0, 300.0, ctx=2_000_000, tag="openai/ultrafast"),
+    ]}
+    assert parse_endpoints(data, "openai")["context_window"] == 1_000_000
+    assert parse_endpoints({}, "y")["context_window"] is None
+
+
+def test_endpoint_change_context_needs_two_samples_then_fires_a_context_event():
+    stored = {"context_window": 524_288}
+    fresh = {"context_window": 1_048_576}
+    events, updates, pending = endpoint_change_events("Mistral Large 4", stored, fresh, {})
+    assert events == [] and updates == {} and pending == {"context_window": 1_048_576}
+
+    events, updates, pending = endpoint_change_events("Mistral Large 4", stored, fresh, pending)
+    assert updates == {"context_window": 1_048_576} and pending == {}
+    assert events[0]["event_type"] == "context" and events[0]["price_scope"] is None
+    assert "from 524,288 to 1,048,576 tokens" in events[0]["summary"]
+
+
+def test_endpoint_change_context_blip_never_fires():
+    # Aion 3.0 went 131K to 1M and back within a day on 2026-09-22.
+    stored = {"context_window": 131_072}
+    _, _, pending = endpoint_change_events("Aion", stored, {"context_window": 1_048_576}, {})
+    events, updates, pending = endpoint_change_events(
+        "Aion", stored, {"context_window": 131_072}, pending)
+    assert events == [] and updates == {} and pending == {}
+
+
+def test_endpoint_change_missing_context_keeps_last_known():
+    events, updates, pending = endpoint_change_events(
+        "M", {"context_window": 1_000_000}, {"context_window": None}, {"context_window": 2_000_000})
+    assert events == [] and updates == {} and pending == {}
+
+
+def test_endpoint_change_first_context_attaches_without_an_event():
+    stored = {"context_window": None}
+    fresh = {"context_window": 1_000_000}
+    _, _, pending = endpoint_change_events("M", stored, fresh, {})
+    events, updates, _ = endpoint_change_events("M", stored, fresh, pending)
+    assert updates == {"context_window": 1_000_000} and events == []
+
+
+def _catalog(context):
+    return json.dumps({"data": [{
+        "id": "mistralai/mistral-large-4",
+        "name": "Mistral: Mistral Large 4",
+        "context_length": context,
+        "pricing": {"prompt": "0.0000007", "completion": "0.0000021"},
+        "architecture": {},
+    }]})
+
+
+def test_sync_pricing_leaves_context_to_the_sweep_once_endpoint_managed(monkeypatch):
+    monkeypatch.setattr(
+        model_registry, "_fetch", lambda url, as_bytes, headers=None: _catalog(524_288))
+    store = {"calls": [], "rows": [
+        ("m1", "Mistral Large 4", "Mistral Large 4", 0.7, 2.1, 1_048_576, True)]}
+    assert model_registry.sync_pricing(_FakeConn(store)) == 1
+    update = next(sql for sql, _ in store["calls"] if sql.startswith("UPDATE models"))
+    assert "context_window" not in update and "price_in" not in update
+    assert not any("INSERT INTO model_events" in sql for sql, _ in store["calls"])
+
+
+def test_sync_pricing_still_sets_context_before_the_first_sweep(monkeypatch):
+    monkeypatch.setattr(
+        model_registry, "_fetch", lambda url, as_bytes, headers=None: _catalog(524_288))
+    store = {"calls": [], "rows": [
+        ("m1", "Mistral Large 4", "Mistral Large 4", None, None, 1_048_576, False)]}
+    assert model_registry.sync_pricing(_FakeConn(store)) == 1
+    update = next(sql for sql, _ in store["calls"] if sql.startswith("UPDATE models"))
+    assert "context_window" in update and "price_in" in update
+    assert any("INSERT INTO model_events" in sql for sql, _ in store["calls"])
+
+
+def test_sync_endpoint_prices_writes_confirmed_context_and_its_event(monkeypatch):
+    # By id, so `mistral-large-4-0` is found even though the name lookup misses it.
+    payload = json.dumps({"data": {"endpoints": [
+        _ep("Mistral", 0.70, 2.10, ctx=1_048_576, tag="mistral/zdr"),
+        _ep("Mistral", 0.77, 2.31, ctx=524_288, tag="mistral/eu"),
+    ]}})
+    monkeypatch.setattr(model_registry, "_fetch", lambda url, as_bytes, headers=None: payload)
+    store = {"calls": [], "rows": [(
+        "m1", "Mistral Large 4", "mistralai/mistral-large-4-0", 0.7, 2.1, 0.7, 2.1,
+        {"context_window": 1_048_576}, 524_288,
+    )]}
+    assert model_registry.sync_endpoint_prices(_FakeConn(store)) == 1
+    update = next((sql, p) for sql, p in store["calls"] if sql.startswith("UPDATE models"))
+    assert "context_window = %(context_window)s" in update[0]
+    assert update[1]["context_window"] == 1_048_576
+    event = next(p for sql, p in store["calls"] if "INSERT INTO model_events" in sql)
+    assert event["event_type"] == "context" and "524,288 to 1,048,576" in event["summary"]

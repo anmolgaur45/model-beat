@@ -559,7 +559,7 @@ def parse_endpoints(data: dict, author: str) -> dict:
     context >= 50% of the model's largest offered context, and never above the
     vendor's list price on either side. Explicit fast-variant exclusion is
     unnecessary: fast endpoints are the expensive duplicates, min never picks
-    them. Pure and unit-testable.
+    them. Context window = the largest any endpoint offers. Pure and unit-testable.
     """
     rows = []
     for e in data.get("endpoints") or []:
@@ -598,6 +598,7 @@ def parse_endpoints(data: dict, author: str) -> dict:
         "vendor_price_in": None, "vendor_price_out": None,
         "floor_price_in": None, "floor_price_out": None,
         "floor_provider": None, "floor_quant": None, "floor_context": None,
+        "context_window": None,
     }
     if not rows:
         return out
@@ -633,7 +634,11 @@ def parse_endpoints(data: dict, author: str) -> dict:
         )
         out["vendor_price_in"], out["vendor_price_out"] = v["list_in"], v["list_out"]
 
+    # No single row can state the model's context. Mistral lists Large 4 at 524K on its EU
+    # row and 1M on its main one, and MiniMax's own row lists M3's guaranteed minimum (524K)
+    # while MiniMax sells up to 1M. The largest offered is right for both.
     native_context = max((r["context"] for r in rows if r["context"]), default=None)
+    out["context_window"] = native_context
     list_in, list_out = out["vendor_price_in"], out["vendor_price_out"]
     credible = [
         r for r in rows
@@ -696,8 +701,9 @@ def endpoint_change_events(
     provider's offer. Confirming its sides separately stored GLM-5.3-Flash at
     Relace's $0.0052 input beside Wafer's $0.20 output (2026-10-23), a price no
     provider sold. Events fire only for numeric→numeric moves (a provider
-    delisting is not a reprice). Returns (model_events rows, confirmed column
-    updates, new pending buffer). Pure and unit-testable.
+    delisting is not a reprice). The context window debounces the same way, so a
+    host appearing for a few hours can't flip it. Returns (model_events rows,
+    confirmed column updates, new pending buffer). Pure and unit-testable.
     """
     events: list[dict] = []
     updates: dict = {}
@@ -761,6 +767,23 @@ def endpoint_change_events(
             o, n = stored.get(f), candidate[f]
             if o is not None and n is not None:
                 events.append(price_event(f, o, n))
+
+    old_ctx, new_ctx = stored.get("context_window"), fresh.get("context_window")
+    if new_ctx is None or new_ctx == old_ctx:
+        new_pending.pop("context_window", None)
+    elif new_pending.get("context_window") != new_ctx:
+        new_pending["context_window"] = new_ctx
+    else:
+        new_pending.pop("context_window")
+        updates["context_window"] = new_ctx
+        if old_ctx:
+            events.append({
+                "event_type": "context",
+                "price_scope": None,
+                "summary": f"{name}: context window changed from {old_ctx:,} to {new_ctx:,} tokens",
+                "old_value": str(old_ctx),
+                "new_value": str(new_ctx),
+            })
 
     return events, updates, new_pending
 
@@ -1341,9 +1364,12 @@ def sync_pricing(conn: psycopg.Connection) -> int:
     (pending_prices IS NOT NULL, set by sync_endpoint_prices) this step stops
     writing its price columns — two writers on one column is exactly the
     oscillation bug this replaced. Price events now come ONLY from the endpoint
-    sweep (debounced, vendor/floor scoped); this step still owns specs
-    (context/modalities/description) and context-change events, and gives brand
-    new models a base price until their first endpoint sweep.
+    sweep (debounced, vendor/floor scoped). The same goes for context: this step looks
+    models up by name, which misses ids that differ (`mistral-large-4-0` froze Large 4 at
+    its first reading for a month), and its figure flips as hosts come and go. The sweep
+    goes by id and debounces, so it owns context and its events too. This step still owns
+    modalities and description, and gives brand new models a base price and context until
+    their first endpoint sweep.
     """
     raw = _fetch(settings.openrouter_models_url, as_bytes=False)
     if raw is None:
@@ -1372,7 +1398,7 @@ def sync_pricing(conn: psycopg.Connection) -> int:
         rec = catalog.get(normalize_key(epoch_key or name))
         if rec is None:
             continue
-        events = [
+        events = [] if endpoint_managed else [
             ev for ev in pricing_change_events(
                 name, {"price_in": old_in, "price_out": old_out, "context_window": old_ctx}, rec
             )
@@ -1394,14 +1420,14 @@ def sync_pricing(conn: psycopg.Connection) -> int:
                         {**ev, "model_id": model_id,
                          "source_url": f"https://openrouter.ai/{rec['openrouter_id']}"},
                     )
-                price_sql = "" if endpoint_managed else """
+                unmanaged_sql = "" if endpoint_managed else """
                         price_in          = %(price_in)s,
-                        price_out         = %(price_out)s,"""
+                        price_out         = %(price_out)s,
+                        context_window    = %(context_window)s,"""
                 cur.execute(
                     f"""
                     UPDATE models SET
-                        openrouter_id     = %(openrouter_id)s,{price_sql}
-                        context_window    = %(context_window)s,
+                        openrouter_id     = %(openrouter_id)s,{unmanaged_sql}
                         input_modalities  = %(input_modalities)s,
                         output_modalities = %(output_modalities)s,
                         description       = COALESCE(%(description)s, models.description),
@@ -1431,6 +1457,7 @@ _ENDPOINT_UPDATE_COLS: dict[str, str] = {
     "floor_provider": "floor_provider",
     "floor_quant": "floor_quant",
     "floor_context": "floor_context",
+    "context_window": "context_window",
 }
 
 
@@ -1448,7 +1475,7 @@ def sync_endpoint_prices(conn: psycopg.Connection) -> int:
         cur.execute(
             """
             SELECT id, name, openrouter_id, price_in, price_out,
-                   vendor_price_in, vendor_price_out, pending_prices
+                   vendor_price_in, vendor_price_out, pending_prices, context_window
             FROM models
             WHERE openrouter_id IS NOT NULL
             ORDER BY endpoints_synced_at ASC NULLS FIRST
@@ -1460,7 +1487,8 @@ def sync_endpoint_prices(conn: psycopg.Connection) -> int:
 
     synced = 0
     event_count = 0
-    for i, (model_id, name, or_id, floor_in, floor_out, vend_in, vend_out, pending) in enumerate(batch):
+    for i, row in enumerate(batch):
+        model_id, name, or_id, floor_in, floor_out, vend_in, vend_out, pending, context = row
         if i:
             time.sleep(settings.endpoint_sweep_delay_seconds)
         clean_id = _OR_VARIANT_RE.sub("", or_id or "")
@@ -1493,6 +1521,7 @@ def sync_endpoint_prices(conn: psycopg.Connection) -> int:
                             floor_provider      = %(floor_provider)s,
                             floor_quant         = %(floor_quant)s,
                             floor_context       = %(floor_context)s,
+                            context_window      = COALESCE(%(context_window)s, context_window),
                             pending_prices      = '{}'::jsonb,
                             endpoints_synced_at = NOW(),
                             updated_at          = NOW()
@@ -1504,6 +1533,7 @@ def sync_endpoint_prices(conn: psycopg.Connection) -> int:
                     stored = {
                         "vendor_price_in": vend_in, "vendor_price_out": vend_out,
                         "floor_price_in": floor_in, "floor_price_out": floor_out,
+                        "context_window": context,
                     }
                     events, updates, new_pending = endpoint_change_events(name, stored, fresh, pending)
                     for ev in events:

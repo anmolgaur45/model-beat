@@ -64,7 +64,7 @@ jobs:
           sage="$(sitemap_age)"
           if [ "$sage" -gt 14400 ]; then sleep 30; sage="$(sitemap_age)"; fi
           if [ "$sage" -lt 0 ]; then
-            echo "::error::Could not fetch /sitemap.xml or read its lastmod."
+            echo "::error::Could not fetch /sitemap.xml or read its lastmod, or its newest lastmod is in the future."
             fail=1
           else
             echo "/sitemap.xml: rendered ${sage}s ago (~$(( sage / 3600 ))h), limit 4h"

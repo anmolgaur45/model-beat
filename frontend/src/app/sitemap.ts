@@ -81,10 +81,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: `${SITE}/models/changes`, lastModified: new Date(), changeFrequency: 'daily', priority: 0.7 },
     { url: `${SITE}/digest`, lastModified: new Date(), changeFrequency: 'weekly', priority: 0.6 },
     { url: `${SITE}/digest/archive`, lastModified: new Date(), changeFrequency: 'weekly', priority: 0.5 },
-    // Sent digest issues (Phase W4) — committed markdown, one page each.
+    // Sent digest issues (Phase W4) — committed markdown, one page each. Start of
+    // the UTC day: issues go live on the morning of their date, and a later time
+    // would be a future lastmod, which fails deploy-health's sitemap check.
     ...listIssues().map((i) => ({
       url: `${SITE}/digest/${i.date}`,
-      lastModified: new Date(i.date + 'T12:00:00Z'),
+      lastModified: new Date(i.date + 'T00:00:00Z'),
       changeFrequency: 'yearly' as const,
       priority: 0.5,
     })),

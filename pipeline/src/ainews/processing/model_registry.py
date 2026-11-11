@@ -889,7 +889,12 @@ def parse_aa_models(data: list[dict]) -> dict[str, dict]:
 
 
 def parse_aa_speed(data: list[dict]) -> dict[str, tuple[float | None, float | None]]:
-    """AA models payload → {base_key: (median tokens/sec, median TTFT s)}.
+    """AA models payload → {base_key: (mean tokens/sec, mean TTFT s)}.
+
+    Reads `performance_v3` (AA's 1k, 10k, 100k and multi-turn workloads, averaged
+    over 5 days). The legacy `performance` medians return null from 2026-12-10
+    and measure differently, so they are never read, not even as a fallback:
+    one model's series would jump between methods.
 
     Same strongest-variant collapse as parse_aa_models, so the speed row
     describes the same representative the benchmark scores do. A strongest
@@ -909,9 +914,9 @@ def parse_aa_speed(data: list[dict]) -> dict[str, tuple[float | None, float | No
         if key in best_ii and ii <= best_ii[key]:
             continue
         best_ii[key] = ii
-        perf = m.get("performance") or {}
-        tps = perf.get("median_output_tokens_per_second")
-        ttft = perf.get("median_time_to_first_token_seconds")
+        perf = m.get("performance_v3") or {}
+        tps = perf.get("mean_output_tokens_per_second")
+        ttft = perf.get("mean_time_to_first_token_seconds")
         tps_f = float(tps) if isinstance(tps, (int, float)) else None
         ttft_f = float(ttft) if isinstance(ttft, (int, float)) else None
         if tps_f is None and ttft_f is None:
@@ -1653,7 +1658,7 @@ def sync_aa_benchmarks(conn: psycopg.Connection) -> int:
                 conn.rollback()
                 log.warning("aa.upsert_failed", error=str(exc))
 
-    # Speed history: append the AA medians at most once per ~day per model
+    # Speed history: append AA's Performance v3 means at most once per ~day per model
     # (recording started 2026-07-14 so "did speed shift with the price change"
     # is answerable once history accrues; AA refreshes these roughly daily,
     # so a tighter cadence would only record duplicates).

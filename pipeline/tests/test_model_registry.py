@@ -577,12 +577,12 @@ def test_parse_aa_models_ignores_null_scores():
 def test_parse_aa_speed_follows_strongest_variant():
     data = [
         {"name": "GPT-5.5 (low)",
-         "performance": {"median_output_tokens_per_second": 120.0,
-                         "median_time_to_first_token_seconds": 0.8},
+         "performance_v3": {"mean_output_tokens_per_second": 120.0,
+                            "mean_time_to_first_token_seconds": 0.8},
          "evaluations": {"artificial_analysis_intelligence_index": 40}},
         {"name": "GPT-5.5 (high)",
-         "performance": {"median_output_tokens_per_second": 74.1,
-                         "median_time_to_first_token_seconds": 2.38},
+         "performance_v3": {"mean_output_tokens_per_second": 74.1,
+                            "mean_time_to_first_token_seconds": 2.38},
          "evaluations": {"artificial_analysis_intelligence_index": 53}},
     ]
     speed = parse_aa_speed(data)
@@ -592,7 +592,7 @@ def test_parse_aa_speed_follows_strongest_variant():
 
 def test_parse_aa_speed_drops_key_when_strongest_variant_lacks_speed():
     data = [
-        {"name": "M (low)", "performance": {"median_output_tokens_per_second": 200.0},
+        {"name": "M (low)", "performance_v3": {"mean_output_tokens_per_second": 200.0},
          "evaluations": {"artificial_analysis_intelligence_index": 30}},
         {"name": "M (high)", "evaluations": {"artificial_analysis_intelligence_index": 60}},
     ]
@@ -601,12 +601,22 @@ def test_parse_aa_speed_drops_key_when_strongest_variant_lacks_speed():
 
 
 def test_parse_aa_speed_keeps_partial_metrics():
-    data = [{"name": "M", "performance": {"median_output_tokens_per_second": 55.5},
+    data = [{"name": "M", "performance_v3": {"mean_output_tokens_per_second": 55.5},
              "evaluations": {}}]
     assert parse_aa_speed(data)[normalize_key("M")] == (55.5, None)
 
 
-# Row shape of the free /api/v2/language/models/free endpoint (2026-09-25).
+def test_parse_aa_speed_never_falls_back_to_legacy_performance():
+    # legacy medians go null on 2026-12-10 and measure differently; reading them
+    # when v3 is missing would splice two methods into one model's history
+    data = [{"name": "M", "performance": {"median_output_tokens_per_second": 80.0,
+                                          "median_time_to_first_token_seconds": 2.2},
+             "performance_v3": None, "evaluations": {}}]
+    assert normalize_key("M") not in parse_aa_speed(data)
+
+
+# Row shape of the free /api/v2/language/models/free endpoint (2026-11-11):
+# legacy `performance` and `performance_v3` side by side until 2026-12-10.
 _AA_FREE_ROW = {
     "name": "GLM-4.5V (Non-reasoning)", "slug": "glm-4-5v",
     "evaluations": {"artificial_analysis_intelligence_index": 6.7,
@@ -616,13 +626,16 @@ _AA_FREE_ROW = {
                     "median_time_to_first_token_seconds": 3,
                     "median_time_to_first_answer_token_seconds": 3,
                     "median_end_to_end_response_time_seconds": 13.49},
+    "performance_v3": {"mean_output_tokens_per_second": 41.2,
+                       "mean_time_to_first_token_seconds": 4,
+                       "mean_time_to_first_answer_token_seconds": 4.1},
 }
 
 
-def test_free_tier_row_yields_speed_but_no_benchmark_scores():
+def test_free_tier_row_yields_v3_speed_but_no_benchmark_scores():
     key = normalize_key("GLM-4.5V")
     assert parse_aa_models([_AA_FREE_ROW]) == {key: {}}
-    assert parse_aa_speed([_AA_FREE_ROW]) == {key: (47.71, 3.0)}
+    assert parse_aa_speed([_AA_FREE_ROW]) == {key: (41.2, 4.0)}
 
 
 def _aa_pages(monkeypatch, pages, fail_on=None):

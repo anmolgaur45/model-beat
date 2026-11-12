@@ -808,6 +808,14 @@ def test_parse_endpoints_tied_vote_goes_to_the_default_endpoint():
     ]}
     out = parse_endpoints(qwen_max, "qwen")
     assert out["vendor_price_in"] == 1.475 and out["vendor_price_out"] == 4.425
+    # Mistral Large 4, 1-1 between `mistral/zdr` (its default, no bare tag) and the EU
+    # endpoint (false "+10%", 2026-11-06):
+    large_4 = {"endpoints": [
+        _ep("Mistral", 0.70, 2.10, tag="mistral/zdr"),
+        _ep("Mistral", 0.77, 2.31, tag="mistral/eu"),
+    ]}
+    out = parse_endpoints(large_4, "mistralai")
+    assert out["vendor_price_in"] == 0.70 and out["vendor_price_out"] == 2.10
 
 
 def test_parse_endpoints_lone_cheap_row_still_loses_to_the_modal_rate():

@@ -622,11 +622,14 @@ def parse_endpoints(data: dict, author: str) -> dict:
         # the price the vendor's least-qualified endpoint states (`alibaba` over
         # `alibaba/us-east-1`, `google-ai-studio` over `google-vertex/eu`), and only
         # then to the higher price, the original belt-and-braces against a lone
-        # unlabelled discount row.
+        # unlabelled discount row. `zdr` is not a qualifier: Mistral has no bare tag,
+        # its default endpoint is `mistral/zdr`, which met `mistral/eu` 1-1 at equal
+        # depth (false "+10%" on Large 4 and Medium 3.5, 2026-11-06).
         prices = [r["list_in"] for r in vendor_rows]
         depth: dict[float, int] = {}
         for r in vendor_rows:
-            depth[r["list_in"]] = min(depth.get(r["list_in"], 99), r["tag"].count("/"))
+            qualifiers = sum(part != "zdr" for part in r["tag"].split("/")[1:])
+            depth[r["list_in"]] = min(depth.get(r["list_in"], 99), qualifiers)
         modal_in = max(set(prices), key=lambda p: (prices.count(p), -depth[p], p))
         v = max(
             (r for r in vendor_rows if r["list_in"] == modal_in),
